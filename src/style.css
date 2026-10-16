@@ -1,0 +1,13 @@
+/* Tarayıcının varsayılan kenar boşluklarını sıfırla, kaydırma çubuğu çıkmasın */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Canvas'ı satır içi (inline) değil blok yap; altta ince boşluk kalmasın */
+canvas {
+  display: block;
+}
