@@ -8,7 +8,7 @@ export const MONAD_TESTNET = {
   faucet: 'https://faucet.monad.xyz',
 }
 // contracts/ içinde deploy edince çıkan adres. Boşken oyun zincirsiz çalışır
-export const RACE_ITEMS_ADDRESS = ''
+export const RACE_ITEMS_ADDRESS = '0x312Bce31256FC237DFAb4B289879942D17456Efd'
 
 // Kontratın sadece kullandığımız fonksiyonları (insan okunur ABI)
 const raceItems = new Interface([
