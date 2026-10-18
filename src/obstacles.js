@@ -10,19 +10,20 @@ import { createTruck } from './truck.js'
 // offset → yolda yan konum (-1 = sol kenar, 0 = orta, 1 = sağ kenar)
 // width / height → wall ve tower için boyut (tırın boyutu truck.js'te sabit)
 // color  → tır rengi: 'white' | 'blue'
+// Aralık 0.075 ≈ 145 birim ≈ tam hızda 2 saniye: bir engeli aşıp yere inmeye vakit kalır
 export const obstacles = [
-  { u: 0.06, type: 'wall', offset: 0, width: 16, height: 4 },
-  { u: 0.14, type: 'tower', offset: -0.5, width: 8, height: 10 },
+  { u: 0.07, type: 'wall', offset: 0, width: 16, height: 4 },
+  { u: 0.145, type: 'tower', offset: -0.5, width: 8, height: 10 },
   { u: 0.22, type: 'tower', offset: 0.5, width: 8, height: 10 },
-  { u: 0.28, type: 'truck', offset: 0.5, color: 'white' },
-  { u: 0.35, type: 'wall', offset: 0, width: 16, height: 5 },
-  { u: 0.42, type: 'truck', offset: -0.5, color: 'blue' },
-  { u: 0.48, type: 'tower', offset: 0.5, width: 8, height: 10 },
-  { u: 0.55, type: 'wall', offset: 0, width: 16, height: 4 },
-  { u: 0.68, type: 'tower', offset: -0.5, width: 8, height: 10 },
-  { u: 0.74, type: 'truck', offset: 0.5, color: 'white' },
-  { u: 0.8, type: 'wall', offset: 0, width: 16, height: 6 },
-  { u: 0.9, type: 'tower', offset: 0.5, width: 8, height: 10 },
+  { u: 0.295, type: 'truck', offset: 0.5, color: 'white' },
+  { u: 0.37, type: 'wall', offset: 0, width: 16, height: 5 },
+  { u: 0.445, type: 'truck', offset: -0.5, color: 'blue' },
+  { u: 0.52, type: 'tower', offset: 0.5, width: 8, height: 10 },
+  { u: 0.595, type: 'wall', offset: 0, width: 16, height: 4 },
+  { u: 0.67, type: 'tower', offset: -0.5, width: 8, height: 10 },
+  { u: 0.745, type: 'truck', offset: 0.5, color: 'white' },
+  { u: 0.82, type: 'wall', offset: 0, width: 16, height: 6 },
+  { u: 0.895, type: 'tower', offset: 0.5, width: 8, height: 10 },
 ]
 
 const ROAD_HALF_WIDTH = 8 // track.js'teki ROAD_WIDTH / 2

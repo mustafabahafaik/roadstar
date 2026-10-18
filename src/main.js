@@ -138,7 +138,7 @@ const controls = new OrbitControls(camera, renderer.domElement)
 controls.target.set(0, 50, 0) // pistin ortası
 controls.maxPolarAngle = Math.PI * 0.495 // kamera suyun altına inmesin
 controls.minDistance = 10
-controls.maxDistance = 600
+controls.maxDistance = 1000 // büyük pistin tamamı görünebilsin
 controls.enableDamping = true // bırakınca yumuşakça yavaşlasın
 controls.enabled = false // başlangıçta takip kamerası aktif
 

@@ -3,6 +3,7 @@ import { neon } from './neon.js'
 
 // Pistin geçeceği kontrol noktaları (x, y, z).
 // y = yükseklik: hepsi suyun (y = 0) epey üstünde, inip çıkan bir rota
+const TRACK_SCALE = 2 // pisti yatayda büyütür (uzunluk ~1950): engeller arası daha uzun olur
 const points = [
   new THREE.Vector3(150, 40, 0),
   new THREE.Vector3(100, 60, 110),
@@ -12,14 +13,14 @@ const points = [
   new THREE.Vector3(-90, 50, -120),
   new THREE.Vector3(0, 70, -90),
   new THREE.Vector3(90, 45, -140),
-]
+].map((p) => new THREE.Vector3(p.x * TRACK_SCALE, p.y, p.z * TRACK_SCALE)) // yükseklik (y) aynı kalır
 
 // CatmullRomCurve3: noktaların hepsinden yumuşakça geçen eğri.
 // İkinci parametre true → son nokta ilk noktaya bağlanır, pist kapalı tur olur
 export const trackCurve = new THREE.CatmullRomCurve3(points, true)
 
 const ROAD_WIDTH = 16 // yolun genişliği
-const SEGMENTS = 400 // eğri boyunca kaç noktada örnek alacağız
+const SEGMENTS = 600 // eğri boyunca kaç noktada örnek alacağız (pist uzadıkça artmalı)
 
 // Eğri boyunca yolun sol ve sağ kenar noktalarını hesaplar
 function computeEdges() {
