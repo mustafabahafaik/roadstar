@@ -18,6 +18,12 @@ const points = [
 // CatmullRomCurve3: noktaların hepsinden yumuşakça geçen eğri.
 // İkinci parametre true → son nokta ilk noktaya bağlanır, pist kapalı tur olur
 export const trackCurve = new THREE.CatmullRomCurve3(points, true)
+export const trackLength = trackCurve.getLength() // pistin toplam uzunluğu (birim)
+
+// İki u değeri arasındaki en kısa uzaklık (birim, işaretli). Turun başı/sonu dahil: 0.99 → 0.01 = +0.02 tur
+export function trackDistance(fromU, toU) {
+  return (((((toU - fromU) % 1) + 1.5) % 1) - 0.5) * trackLength
+}
 
 export const ROAD_WIDTH = 16 // yolun genişliği (car.js da kullanıyor: yolun dışına çıkınca düşme)
 const SEGMENTS = 600 // eğri boyunca kaç noktada örnek alacağız (pist uzadıkça artmalı)

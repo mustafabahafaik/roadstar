@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { trackCurve, ROAD_WIDTH } from './track.js'
+import { trackCurve, trackLength, trackDistance, ROAD_WIDTH } from './track.js'
 import { obstacles, TOWER_TOP_RATIO } from './obstacles.js'
 import { TRUCK_SIZE } from './truck.js'
 import { input } from './input.js'
@@ -24,22 +24,19 @@ const FALL_TIME = 2 // en fazla kaç saniye düşsün
 const FALL_DEPTH = 40 // ya da yolun kaç birim altına inince yeniden doğsun
 const CRASH_TIME = 1.2 // çarptıktan kaç saniye sonra yeniden doğsun
 const OBSTACLE_CLEARANCE = 20 // yeniden doğma noktası bir engele bundan yakın olmasın (birim)
+const FUEL_USE = 0.45 // süzülürken saniyede harcanan yakıt (dolu depo ≈ 2.2 sn süzülme)
+const FUEL_REGEN = 0.05 // yerdeyken saniyede dolan yakıt (boştan dolmaya 20 sn; Thrust Cell anında doldurur)
+const BOOST_SLOWDOWN = 40 // Block Rush bitince fazla hız saniyede bu kadar azalır
 
 // Arabanın çarpışma kutusu (carModel.js ölçüleri: boy ≈ 9.7, genişlik ≈ 4.1)
 const CAR_HALF_LENGTH = 4.8
 const CAR_HALF_WIDTH = 2.0
 
-const trackLength = trackCurve.getLength() // pistin toplam uzunluğu (birim)
 const up = new THREE.Vector3(0, 1, 0)
-
-// İki u değeri arasındaki en kısa uzaklık (birim). Turun başı/sonu dahil: 0.99 ile 0.01 arası 0.02 tur
-function trackGap(fromU, toU) {
-  return (((((toU - fromU) % 1) + 1.5) % 1) - 0.5) * trackLength
-}
 
 // Engellerin pist koordinatlarındaki kutuları: pist boyunca yarım derinlik, yandaki merkez ve
 // yarım genişlik, yükseklik. AABB (eksenlere hizalı kutu): her eksende ayrı ayrı üst üste binme kontrolü
-const obstacleBoxes = obstacles.map((o) => {
+export const obstacleBoxes = obstacles.map((o) => {
   const center = o.offset * ROAD_HALF
   if (o.type === 'wall') return { u: o.u, center, halfDepth: 1, halfWidth: o.width / 2, top: o.height }
   if (o.type === 'tower') {
@@ -68,6 +65,9 @@ export function createCar(scene, events = {}) {
     crashTime: 0, // ne zamandır çarpmış durumda (saniye)
     respawned: false, // bu karede yeniden doğdu mu (kamera ani geçiş yapsın diye main.js okur)
     blink: 0, // yeniden doğduktan sonra yanıp sönme süresi (saniye); bu sürede çarpışma yok
+    fuel: 1, // itici yakıtı (0 → 1). items.js: Thrust Cell doldurur
+    shield: false, // kalkan açık mı. items.js: 1 tuşu açar; bir çarpışmayı affeder
+    boost: 1, // hız çarpanı. items.js: Block Rush sırasında 1.6
   }
   let thrustPower = 0 // roketlerin gücü (0 → 1), görsel efektler için
   let roll = 0 // yana yatma açısı (radyan)
@@ -92,7 +92,7 @@ export function createCar(scene, events = {}) {
       if (state.height >= b.top) return false // arabanın altı engelin tepesinden yukarıda: üstünden geçiyor
       const half = halfSizeAt(b, state.height)
       return (
-        Math.abs(trackGap(state.u, b.u)) < CAR_HALF_LENGTH + half.depth && // pist boyunca
+        Math.abs(trackDistance(state.u, b.u)) < CAR_HALF_LENGTH + half.depth && // pist boyunca
         Math.abs(state.offset - b.center) < CAR_HALF_WIDTH + half.width // yanlara
       )
     })
@@ -119,11 +119,14 @@ export function createCar(scene, events = {}) {
   }
 
   function updateDriving(dt) {
-    // 1) Hız: gaz, fren, sürtünme
-    if (input.forward) state.speed += ACCELERATION * dt
+    // 1) Hız: gaz, fren, sürtünme. Block Rush (boost) en yüksek hızı ve ivmeyi artırır
+    const maxSpeed = MAX_SPEED * state.boost
+    if (input.forward) state.speed += ACCELERATION * state.boost * dt
     else if (input.brake) state.speed -= BRAKE * dt
     else state.speed -= DRAG * dt
-    state.speed = THREE.MathUtils.clamp(state.speed, 0, MAX_SPEED) // clamp: değeri iki sınır arasında tut
+    // Sınırın üstündeyse (Rush yeni bittiyse) birden değil yavaşça normale in
+    if (state.speed > maxSpeed) state.speed = Math.max(maxSpeed, state.speed - BOOST_SLOWDOWN * dt)
+    state.speed = Math.max(0, state.speed)
 
     // 2) Pist boyunca ilerle
     moveAlongTrack(state.speed * dt)
@@ -139,7 +142,10 @@ export function createCar(scene, events = {}) {
       state.vy = JUMP_VELOCITY
       thrustPower = 1 // kalkışta roketler tam güç ateşlenir
     }
-    const hovering = !onGround && input.jump
+    // Süzülme yakıt harcar; yakıt bitince roketler yerçekimini karşılayamaz
+    const hovering = !onGround && input.jump && state.fuel > 0
+    if (hovering) state.fuel = Math.max(0, state.fuel - FUEL_USE * dt)
+    else if (onGround) state.fuel = Math.min(1, state.fuel + FUEL_REGEN * dt)
     applyGravity(dt, hovering ? HOVER_GRAVITY : GRAVITY)
 
     // Roket gücü: yerdeyken söner, havada Space basılıysa tam, değilse yarım
@@ -154,7 +160,16 @@ export function createCar(scene, events = {}) {
     }
 
     // 6) Çarpışma (yeniden doğduktan sonraki yanıp sönme süresinde yok)
-    if (state.blink <= 0 && hitsObstacle()) crash()
+    if (state.blink <= 0 && hitsObstacle()) {
+      if (state.shield) {
+        // Kalkan çarpışmayı affeder: kırılır, araba kısa süre yanıp sönerek engelin içinden geçer
+        state.shield = false
+        state.blink = 1.2
+        events.onShieldBlock?.()
+      } else {
+        crash()
+      }
+    }
   }
 
   function crash() {
@@ -222,7 +237,7 @@ export function createCar(scene, events = {}) {
     let u = state.u - backDistance / trackLength
     // Doğma noktası bir engelin dibine denk gelmesin: yakın engel varsa onun da gerisine al
     for (let tries = 0; tries < obstacles.length; tries++) {
-      const blocking = obstacles.find((o) => Math.abs(trackGap(u, o.u)) < OBSTACLE_CLEARANCE)
+      const blocking = obstacles.find((o) => Math.abs(trackDistance(u, o.u)) < OBSTACLE_CLEARANCE)
       if (!blocking) break
       u = blocking.u - (OBSTACLE_CLEARANCE * 1.5) / trackLength
     }

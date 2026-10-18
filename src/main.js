@@ -8,6 +8,7 @@ import { quality } from './settings.js'
 import { createTrack } from './track.js'
 import { createObstacles } from './obstacles.js'
 import { createCar } from './car.js'
+import { createItems } from './items.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -134,7 +135,13 @@ function showMessage(text) {
 const car = createCar(scene, {
   onCrash: () => showMessage('ÇARPTIN!'),
   onFall: () => showMessage('DÜŞTÜN!'),
+  onShieldBlock: () => showMessage('KALKAN!'),
 })
+
+// Toplanabilir tokenlar ve skill'ler (items.js). Oda adresten gelir: ?room=oda-adi
+// Aynı oda → aynı tokenlar aynı yerlerde (tohumlu rastgelelik)
+const roomId = new URLSearchParams(window.location.search).get('room') ?? 'monad-1'
+const items = createItems(scene, car, roomId)
 scene.add(car.model)
 
 // Hangi nesne gölge düşürür (castShadow), hangisi üstüne gölge alır (receiveShadow)
@@ -279,6 +286,7 @@ renderer.setAnimationLoop((time) => {
   skyUniforms.time.value = time // bulutları kaydır
 
   car.update(delta)
+  items.update(delta)
 
   if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı
   else updateChaseCamera(delta)

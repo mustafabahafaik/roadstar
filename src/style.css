@@ -38,3 +38,152 @@ canvas {
   70% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* --- Token / skill HUD'u (hud.js) --- */
+.hud-panel {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  width: 230px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(8, 10, 22, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(6px); /* arkasındaki sahneyi bulanıklaştır, yazı okunsun */
+  color: #e6eaff;
+  font: 500 12px/1.3 system-ui, 'Segoe UI', sans-serif;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hud-room {
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+
+.hud-fuel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #29e7ff;
+}
+
+.hud-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.hud-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #1aa6ff, #29e7ff);
+  box-shadow: 0 0 8px #29e7ff;
+  transition: width 0.1s linear;
+}
+
+.hud-bar-fill.low {
+  background: #ff5a3c;
+  box-shadow: 0 0 8px #ff5a3c;
+}
+
+.hud-slots {
+  display: grid;
+  gap: 5px;
+}
+
+.hud-slot {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid color-mix(in srgb, var(--c) 45%, transparent);
+  overflow: hidden;
+}
+
+.hud-slot.empty {
+  opacity: 0.45;
+}
+
+.hud-slot.active {
+  background: color-mix(in srgb, var(--c) 22%, transparent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--c) 60%, transparent);
+  opacity: 1;
+}
+
+.hud-slot kbd {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--c);
+  color: #0a0c18;
+  font: 800 12px system-ui, sans-serif;
+}
+
+.hud-slot-count {
+  font-weight: 700;
+}
+
+.hud-slot-state {
+  min-width: 40px;
+  text-align: right;
+  color: var(--c);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums; /* rakamlar aynı genişlikte: süre azalırken titremesin */
+}
+
+.hud-slot-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 0;
+  background: var(--c);
+}
+
+.hud-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  opacity: 0.85;
+}
+
+.hud-stats span[style] b {
+  color: var(--c);
+}
+
+.hud-toast {
+  position: fixed;
+  top: 44%;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font: 800 22px system-ui, 'Segoe UI', sans-serif;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px var(--c), 0 0 24px var(--c);
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hud-toast.show {
+  animation: hud-toast 0.9s ease-out;
+}
+
+@keyframes hud-toast {
+  0% { opacity: 0; transform: translate(-50%, 8px); }
+  15% { opacity: 1; transform: translate(-50%, 0); }
+  70% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -12px); }
+}
