@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Sky } from 'three/addons/objects/Sky.js'
 import { Water } from 'three/addons/objects/Water.js'
 import { createTrack } from './track.js'
+import { createObstacles } from './obstacles.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -71,9 +72,19 @@ const water = new Water(new THREE.PlaneGeometry(10000, 10000), {
 water.rotation.x = -Math.PI / 2 // düzlem dikey gelir, yere yatır
 scene.add(water)
 
+// Işıklar: MeshStandardMaterial kullanan tır ve engel gövdeleri için.
+// HemisphereLight üstten gök rengi, alttan deniz rengi verir; DirectionalLight güneşin kendisi
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x0b3a55, 4))
+const sunLight = new THREE.DirectionalLight(0xffffff, 5)
+sunLight.position.copy(sun).multiplyScalar(100)
+scene.add(sunLight)
+
 // --- 7. Pist: gökyüzünde kıvrılan neon rota (track.js) ---
 const track = createTrack()
 scene.add(track)
+
+// Engeller: atlanacak duvarlar ve sağa-sola kaçılacak bloklar (obstacles.js)
+scene.add(createObstacles())
 
 // --- 8. OrbitControls: sol tık döndür, sağ tık kaydır, tekerlek yakınlaş ---
 const controls = new OrbitControls(camera, renderer.domElement)
