@@ -3,6 +3,9 @@ import { trackCurve, trackLength, trackDistance, ROAD_WIDTH } from './track.js'
 import { obstacles, TOWER_TOP_RATIO } from './obstacles.js'
 import { TRUCK_SIZE } from './truck.js'
 import { input } from './input.js'
+
+// Yarış bitince kullanılan "kontroller": gaz yok, fren basılı → araba yavaşça durur
+const FINISHED_INPUT = { forward: false, brake: true, left: false, right: false, jump: false }
 import { createCarModel } from './carModel.js'
 import { createThrusters } from './thrusters.js'
 
@@ -68,6 +71,9 @@ export function createCar(scene, events = {}) {
     fuel: 1, // itici yakıtı (0 → 1). items.js: Thrust Cell doldurur
     shield: false, // kalkan açık mı. items.js: 1 tuşu açar; bir çarpışmayı affeder
     boost: 1, // hız çarpanı. items.js: Block Rush sırasında 1.6
+    distance: 0, // başlangıçtan beri net ilerleme (birim). Geri sekme ve yeniden doğma düşülür
+    raceTime: 0, // yarış süresi (saniye): ilk harekette başlar
+    finished: false, // bir tur tamamlandı mı
   }
   let thrustPower = 0 // roketlerin gücü (0 → 1), görsel efektler için
   let roll = 0 // yana yatma açısı (radyan)
@@ -99,6 +105,7 @@ export function createCar(scene, events = {}) {
   }
 
   function moveAlongTrack(distance) {
+    state.distance += distance
     // u her zaman 0 ile 1 arasında kalsın: tur bitince başa dön (+1 negatif değere karşı)
     state.u = (((state.u + distance / trackLength) % 1) + 1) % 1
   }
@@ -119,10 +126,11 @@ export function createCar(scene, events = {}) {
   }
 
   function updateDriving(dt) {
+    const controls = state.finished ? FINISHED_INPUT : input
     // 1) Hız: gaz, fren, sürtünme. Block Rush (boost) en yüksek hızı ve ivmeyi artırır
     const maxSpeed = MAX_SPEED * state.boost
-    if (input.forward) state.speed += ACCELERATION * state.boost * dt
-    else if (input.brake) state.speed -= BRAKE * dt
+    if (controls.forward) state.speed += ACCELERATION * state.boost * dt
+    else if (controls.brake) state.speed -= BRAKE * dt
     else state.speed -= DRAG * dt
     // Sınırın üstündeyse (Rush yeni bittiyse) birden değil yavaşça normale in
     if (state.speed > maxSpeed) state.speed = Math.max(maxSpeed, state.speed - BOOST_SLOWDOWN * dt)
@@ -132,18 +140,18 @@ export function createCar(scene, events = {}) {
     moveAlongTrack(state.speed * dt)
 
     // 3) Sağa-sola kayma (havadayken de çalışır)
-    if (input.left) state.offset -= STRAFE_SPEED * dt
-    if (input.right) state.offset += STRAFE_SPEED * dt
+    if (controls.left) state.offset -= STRAFE_SPEED * dt
+    if (controls.right) state.offset += STRAFE_SPEED * dt
     state.offset = THREE.MathUtils.clamp(state.offset, -OFFSET_LIMIT, OFFSET_LIMIT)
 
     // 4) Zıplama, roketle süzülme ve yerçekimi
     const onGround = state.height <= 0 && !state.falling
-    if (onGround && input.jump) {
+    if (onGround && controls.jump) {
       state.vy = JUMP_VELOCITY
       thrustPower = 1 // kalkışta roketler tam güç ateşlenir
     }
     // Süzülme yakıt harcar; yakıt bitince roketler yerçekimini karşılayamaz
-    const hovering = !onGround && input.jump && state.fuel > 0
+    const hovering = !onGround && controls.jump && state.fuel > 0
     if (hovering) state.fuel = Math.max(0, state.fuel - FUEL_USE * dt)
     else if (onGround) state.fuel = Math.min(1, state.fuel + FUEL_REGEN * dt)
     applyGravity(dt, hovering ? HOVER_GRAVITY : GRAVITY)
@@ -194,6 +202,13 @@ export function createCar(scene, events = {}) {
   }
 
   function update(dt) {
+    // Yarış süresi ilk harekette başlar, bir tur tamamlanınca durur
+    if (!state.finished && (state.speed > 0 || state.raceTime > 0)) state.raceTime += dt
+    if (!state.finished && state.distance >= trackLength) {
+      state.finished = true
+      events.onFinish?.()
+    }
+
     if (state.crashed) updateCrash(dt)
     else updateDriving(dt)
     if (state.blink > 0) state.blink -= dt
@@ -211,7 +226,8 @@ export function createCar(scene, events = {}) {
 
     // Yatma ve yunuslama: sağa kayarken sağa yatar, yükselirken burnu kalkar.
     // rotateZ/rotateX arabanın kendi eksenlerinde döndürür (lookAt'tan sonra çağrılmalı)
-    const strafe = state.crashed ? 0 : (input.right ? 1 : 0) - (input.left ? 1 : 0)
+    const controls = state.finished ? FINISHED_INPUT : input
+    const strafe = state.crashed ? 0 : (controls.right ? 1 : 0) - (controls.left ? 1 : 0)
     roll += (strafe * 0.2 - roll) * Math.min(1, dt * 7)
     pitch += (THREE.MathUtils.clamp(-state.vy * 0.012, -0.2, 0.2) - pitch) * Math.min(1, dt * 5)
     model.rotateZ(roll)
@@ -241,7 +257,9 @@ export function createCar(scene, events = {}) {
       if (!blocking) break
       u = blocking.u - (OBSTACLE_CLEARANCE * 1.5) / trackLength
     }
-    state.u = ((u % 1) + 1) % 1
+    const newU = ((u % 1) + 1) % 1
+    state.distance += trackDistance(state.u, newU) // geri gidilen mesafe ilerlemeden düşülür
+    state.u = newU
     state.offset = 0
     state.height = 0
     state.vy = 0
@@ -259,6 +277,8 @@ export function createCar(scene, events = {}) {
 
   // 0 → 1: kamera efektleri için hızın maksimuma oranı
   const speedRatio = () => state.speed / MAX_SPEED
+  // 0 → 1: turun ne kadarı tamamlandı
+  const progress = () => THREE.MathUtils.clamp(state.distance / trackLength, 0, 1)
 
-  return { model, state, update, speedRatio }
+  return { model, state, update, speedRatio, progress }
 }

@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { trackCurve, trackDistance } from './track.js'
 import { obstacleBoxes } from './car.js'
 import { neon } from './neon.js'
-import { hashString, seededRandom } from './random.js'
+import { itemHash, itemTypeFromHash, hashFraction } from './random.js'
 import { createItemsHud } from './hud.js'
 
 // --- Token türleri (0-4). id zincire gidecek listede de bu sayıyla tutulur ---
@@ -20,11 +20,10 @@ const RUSH = 3
 const GOLD = 4
 
 // --- Ayarlar ---
-const TOKEN_COUNT = 40 // pist boyunca kaç token
+export const TOKEN_COUNT = 40 // pist boyunca kaç token (kontrattaki ITEMS_PER_ROOM ile aynı olmalı)
 const LANE_OFFSET = 4.5 // sol / orta / sağ şerit merkezleri (−4.5, 0, 4.5)
 const GROUND_HEIGHT = 1.6 // yoldaki tokenların yüksekliği
 const AIR_CHANCE = 0.35 // tokenların ne kadarı havada olsun
-const GOLD_CHANCE = 0.05 // altın token olasılığı (~%5)
 const PICKUP_RADIUS = 4.5 // araba merkezine bu kadar yaklaşınca toplanır
 const MAGNET_RADIUS = 35 // mıknatıs bu mesafedeki tokenları çeker
 const MAGNET_PULL_SPEED = 110 // çekilen tokenın hızı (birim / saniye)
@@ -32,28 +31,19 @@ const RUSH_MULTIPLIER = 1.6 // Block Rush sırasında en yüksek hız ve ivme ç
 
 const up = new THREE.Vector3(0, 1, 0)
 
-// Türü seç: önce altın (%5), kalanı: %40 Thrust Cell, %20 Kalkan, %20 Mıknatıs, %20 Block Rush
-function pickType(r) {
-  if (r < GOLD_CHANCE) return GOLD
-  const t = (r - GOLD_CHANCE) / (1 - GOLD_CHANCE) // kalan aralığı yeniden 0–1'e yay
-  if (t < 0.4) return THRUST
-  if (t < 0.6) return SHIELD
-  if (t < 0.8) return MAGNET
-  return RUSH
-}
-
 // --- 1) Yerleşim: roomId + index → konum ve tür (her açılışta aynı) ---
+// Tür, kontrattaki itemAt ile aynı formülden gelir (random.js); konum aynı hash'in başka bitlerinden
 export function planTokens(roomId) {
-  const seed = hashString(roomId)
   const plan = []
   for (let index = 0; index < TOKEN_COUNT; index++) {
-    const r = (salt) => seededRandom(seed, index, salt) // her özellik için ayrı "tuz"
+    const hash = itemHash(roomId, index)
+    const r = (slot) => hashFraction(hash, slot) // her özellik hash'in ayrı bir parçasından
 
     // Pist TOKEN_COUNT dilime bölünür; her token kendi diliminin içinde rastgele bir yerde
     const u = (index + 0.15 + 0.7 * r(0)) / TOKEN_COUNT
     const offset = (Math.floor(r(1) * 3) - 1) * LANE_OFFSET // −1, 0, 1 → sol, orta, sağ
     let height = r(2) < AIR_CHANCE ? 5 + r(3) * 3 : GROUND_HEIGHT
-    const type = pickType(r(4))
+    const type = itemTypeFromHash(hash) // zincirdeki RaceItems.itemAt(roomId, index) ile aynı
 
     // Bir engelin üstüne/içine denk geliyorsa engelin tepesinin üstüne kaldır (uçana ödül)
     for (const b of obstacleBoxes) {
@@ -158,7 +148,9 @@ function createCarEffects(carModel) {
 }
 
 // --- 3) Toplama, envanter ve skill'ler ---
-export function createItems(scene, car, roomId) {
+// events: { onCollect(index, type), onSkill(type) } → main.js bunları zincire işlem olarak gönderir.
+// Oyundaki etki önce uygulanır, olay sonra bildirilir (iyimser arayüz: zinciri beklemeyiz)
+export function createItems(scene, car, roomId, events = {}) {
   const hud = createItemsHud(TOKEN_TYPES, roomId, TOKEN_COUNT)
   const parts = createTokenParts()
   const effects = createCarEffects(car.model)
@@ -188,6 +180,7 @@ export function createItems(scene, car, roomId) {
     if (token.type === THRUST) car.state.fuel = 1 // anında etki
     else if (token.type in inventory) inventory[token.type]++
     hud.toast(`+ ${TOKEN_TYPES[token.type].name}`, TOKEN_TYPES[token.type].color)
+    events.onCollect?.(token.index, token.type)
   }
 
   function useSkill(type) {
@@ -201,6 +194,7 @@ export function createItems(scene, car, roomId) {
     }
     inventory[type]--
     hud.toast(`${TOKEN_TYPES[type].name} aktif!`, TOKEN_TYPES[type].color)
+    events.onSkill?.(type)
   }
 
   // 1, 2, 3 tuşları (üst sıra ya da sayı tuş takımı). e.repeat: basılı tutunca tekrar tetiklenmesin

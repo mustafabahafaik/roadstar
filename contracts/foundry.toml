@@ -1,0 +1,18 @@
+# Foundry ayarları (forge init'in oluşturduğu dosyanın sadeleştirilmiş hâli)
+[profile.default]
+src = "src"         # kontratlar
+test = "test"       # testler
+out = "out"         # derleme çıktısı (ABI, bytecode)
+libs = ["lib"]      # forge install ile gelen kütüphaneler
+solc = "0.8.28"     # Solidity derleyici sürümü
+evm_version = "cancun"
+
+# import "@openzeppelin/..." yazınca hangi klasöre bakılacağı
+remappings = [
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "forge-std/=lib/forge-std/src/",
+]
+
+# --rpc-url monad_testnet yazınca kullanılacak adres
+[rpc_endpoints]
+monad_testnet = "https://testnet-rpc.monad.xyz"

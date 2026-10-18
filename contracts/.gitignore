@@ -1,0 +1,6 @@
+# Derleme çıktıları ve önbellek
+out/
+cache/
+broadcast/
+# Gizli anahtarlar asla repoya girmesin
+.env

@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .claude/
+
+# Gizli anahtarlar (özel anahtar, RPC anahtarları) asla repoya girmesin
+.env
+.env.*
+!.env.example

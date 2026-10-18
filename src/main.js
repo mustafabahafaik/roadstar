@@ -8,7 +8,9 @@ import { quality } from './settings.js'
 import { createTrack } from './track.js'
 import { createObstacles } from './obstacles.js'
 import { createCar } from './car.js'
-import { createItems } from './items.js'
+import { createItems, TOKEN_TYPES, TOKEN_COUNT } from './items.js'
+import { createChain } from './chain.js'
+import { createTxHud } from './txHud.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -136,12 +138,35 @@ const car = createCar(scene, {
   onCrash: () => showMessage('ÇARPTIN!'),
   onFall: () => showMessage('DÜŞTÜN!'),
   onShieldBlock: () => showMessage('KALKAN!'),
+  onFinish: () => {
+    showMessage('BİTİŞ!')
+    txHud.showSummary({
+      time: car.state.raceTime,
+      collected: items.collected.length,
+      total: TOKEN_COUNT,
+      gold: items.collected.filter((c) => c.type === 4).length,
+    })
+  },
 })
 
-// Toplanabilir tokenlar ve skill'ler (items.js). Oda adresten gelir: ?room=oda-adi
-// Aynı oda → aynı tokenlar aynı yerlerde (tohumlu rastgelelik)
-const roomId = new URLSearchParams(window.location.search).get('room') ?? 'monad-1'
-const items = createItems(scene, car, roomId)
+// Zincir (chain.js): burner cüzdan + kendi nonce takibimizle işlem gönderme.
+// txHud.js: sağ üstte canlı işlem akışı ve yarış sonu özeti
+let txHud = null
+const chain = createChain(() => txHud?.refresh())
+txHud = createTxHud(() => chain)
+
+// Toplanabilir tokenlar ve skill'ler (items.js). Oda numarası adresten gelir: ?room=5
+// Aynı oda → aynı tokenlar aynı yerlerde (keccak tabanlı tohumlu rastgelelik, zincirle aynı).
+// ?room yoksa her yarış yeni oda: zincir aynı odada aynı tokenı ikinci kez toplatmaz
+const roomParam = Number(new URLSearchParams(window.location.search).get('room'))
+const roomId = Number.isSafeInteger(roomParam) && roomParam > 0 ? roomParam : Math.floor(Date.now() / 1000)
+
+// İyimser arayüz: etki oyunda hemen uygulanır (items.js), işlem arkada gider, oyun beklemez
+chain.send('joinRoom', [roomId], `joinRoom #${roomId}`)
+const items = createItems(scene, car, roomId, {
+  onCollect: (index, type) => chain.send('collect', [roomId, index], `collect #${index} ${TOKEN_TYPES[type].name}`),
+  onSkill: (type) => chain.send('useSkill', [roomId, type], `useSkill ${TOKEN_TYPES[type].name}`),
+})
 scene.add(car.model)
 
 // Hangi nesne gölge düşürür (castShadow), hangisi üstüne gölge alır (receiveShadow)
@@ -287,6 +312,7 @@ renderer.setAnimationLoop((time) => {
 
   car.update(delta)
   items.update(delta)
+  txHud.setProgress(car.progress())
 
   if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı
   else updateChaseCamera(delta)
