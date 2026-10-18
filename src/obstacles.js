@@ -6,27 +6,28 @@ import { createTruck } from './truck.js'
 
 // Her engel bir veri satırı. İleride arabayla çarpışmayı da bu listeden kontrol edeceğiz.
 // u      → turun neresinde (0 = başlangıç, 0.5 = yarısı, 1 = tur sonu)
-// type   → 'wall' (tam duvar, atla) | 'tower' (yarım blok, kaç) | 'truck' (tır, kaç ya da atla)
+// type   → 'wall' (tam duvar, atla) | 'tower' (yarım blok: kaç ya da Space basılı uç) | 'truck' (tır, kaç ya da atla)
 // offset → yolda yan konum (-1 = sol kenar, 0 = orta, 1 = sağ kenar)
 // width / height → wall ve tower için boyut (tırın boyutu truck.js'te sabit)
 // color  → tır rengi: 'white' | 'blue'
 // Aralık 0.075 ≈ 145 birim ≈ tam hızda 2 saniye: bir engeli aşıp yere inmeye vakit kalır
 export const obstacles = [
   { u: 0.07, type: 'wall', offset: 0, width: 16, height: 4 },
-  { u: 0.145, type: 'tower', offset: -0.5, width: 8, height: 10 },
-  { u: 0.22, type: 'tower', offset: 0.5, width: 8, height: 10 },
+  { u: 0.145, type: 'tower', offset: -0.5, width: 8, height: 7 },
+  { u: 0.22, type: 'tower', offset: 0.5, width: 8, height: 7 },
   { u: 0.295, type: 'truck', offset: 0.5, color: 'white' },
   { u: 0.37, type: 'wall', offset: 0, width: 16, height: 5 },
   { u: 0.445, type: 'truck', offset: -0.5, color: 'blue' },
-  { u: 0.52, type: 'tower', offset: 0.5, width: 8, height: 10 },
+  { u: 0.52, type: 'tower', offset: 0.5, width: 8, height: 7 },
   { u: 0.595, type: 'wall', offset: 0, width: 16, height: 4 },
-  { u: 0.67, type: 'tower', offset: -0.5, width: 8, height: 10 },
+  { u: 0.67, type: 'tower', offset: -0.5, width: 8, height: 7 },
   { u: 0.745, type: 'truck', offset: 0.5, color: 'white' },
   { u: 0.82, type: 'wall', offset: 0, width: 16, height: 6 },
-  { u: 0.895, type: 'tower', offset: 0.5, width: 8, height: 10 },
+  { u: 0.895, type: 'tower', offset: 0.5, width: 8, height: 7 },
 ]
 
 const ROAD_HALF_WIDTH = 8 // track.js'teki ROAD_WIDTH / 2
+export const TOWER_TOP_RATIO = 0.6 // kulenin tepesi tabanının bu oranı kadar geniş (car.js çarpışmada da kullanır)
 
 // Malzemeler bir kez oluşturulup tüm engellerde paylaşılır (GPU için daha ucuz)
 // MeshStandardMaterial ışığa tepki verir: metalness = metalik görünüm, roughness = pürüzlülük
@@ -63,7 +64,7 @@ function createWall(width, height) {
 // Kule: yukarı doğru incelen kare gövde + etrafında neon halkalar
 function createTower(width, height) {
   const group = new THREE.Group()
-  const topWidth = width * 0.6
+  const topWidth = width * TOWER_TOP_RATIO
 
   // 4 kenarlı silindir = kare kesitli kule. Yarıçap köşeye kadar olan uzaklık, yani kenar / √2
   const body = new THREE.Mesh(

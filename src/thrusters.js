@@ -98,7 +98,50 @@ export function createThrusters(carModel, scene) {
 
   // power: 0 = kapalı, 1 = tam güç
   // carVelocity: arabanın dünya hızı, right: arabanın sağ yönü (birim vektör)
+  // Patlama parlaması: hızla büyüyüp sönen turuncu küre (bloom ile parlar)
+  const flash = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 24, 16),
+    new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0xff8a2a).multiplyScalar(4),
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  )
+  flash.material.userData.bloom = true
+  flash.visible = false
+  scene.add(flash)
+  let flashAge = Infinity
+  const FLASH_LIFE = 0.45
+
+  // Çarpışma patlaması: parlama + her yöne savrulan duman
+  function burst(position, count = 45) {
+    flash.position.copy(position)
+    flash.position.y += 1.5
+    flashAge = 0
+    for (let i = 0; i < count; i++) {
+      const p = particles[nextParticle]
+      nextParticle = (nextParticle + 1) % SMOKE_COUNT
+      p.age = 0
+      p.sprite.visible = true
+      p.sprite.position.copy(flash.position)
+      // Rastgele yön (yukarı ağırlıklı) × rastgele hız
+      p.velocity.set(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize()
+      p.velocity.multiplyScalar(6 + Math.random() * 10)
+      p.carry.set(0, 0, 0)
+    }
+  }
+
   function update(dt, power, carVelocity, right) {
+    // Parlama: büyü ve sön
+    if (flashAge < FLASH_LIFE) {
+      flashAge += dt
+      const t = Math.min(1, flashAge / FLASH_LIFE)
+      flash.visible = t < 1
+      flash.scale.setScalar(1.5 + t * 7)
+      flash.material.opacity = 1 - t
+    }
+
     // Miras hız: ileri hızın çoğu (duman arabayla gider, sütun gibi altında kalır),
     // yan hızın azı (sağa-sola kayınca sütunlar geride kalıp yana yatar)
     lateral.copy(right).multiplyScalar(carVelocity.dot(right))
@@ -143,5 +186,5 @@ export function createThrusters(carModel, scene) {
     }
   }
 
-  return { update }
+  return { update, burst }
 }

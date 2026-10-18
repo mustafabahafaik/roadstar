@@ -119,8 +119,22 @@ scene.add(track)
 const obstacleGroup = createObstacles()
 scene.add(obstacleGroup)
 
+// Ekran yazısı (HUD: oyunun üstüne bindirilen bilgi). Stili style.css'te
+const hudMessage = document.createElement('div')
+hudMessage.className = 'hud-message'
+document.body.appendChild(hudMessage)
+function showMessage(text) {
+  hudMessage.textContent = text
+  hudMessage.classList.remove('show')
+  void hudMessage.offsetWidth // tarayıcıyı yeniden hesaplamaya zorla → animasyon baştan başlasın
+  hudMessage.classList.add('show')
+}
+
 // Araba: W/S gaz-fren, A/D sağ-sol, Space zıpla (basılı tut → roketle süzül) (car.js)
-const car = createCar(scene)
+const car = createCar(scene, {
+  onCrash: () => showMessage('ÇARPTIN!'),
+  onFall: () => showMessage('DÜŞTÜN!'),
+})
 scene.add(car.model)
 
 // Hangi nesne gölge düşürür (castShadow), hangisi üstüne gölge alır (receiveShadow)
@@ -205,9 +219,14 @@ function updateChaseCamera(dt) {
   car.model.localToWorld(desiredPosition)
   car.model.localToWorld(lookTarget)
 
-  if (car.state.falling) {
-    // Düşerken kamera yerinde kalır, sadece aşağı düşen arabaya bakar
-    camera.lookAt(car.model.position)
+  if (car.state.falling || car.state.crashed) {
+    // Düşerken / çarpınca kamera yerinde kalır, sadece arabaya bakar
+    lookTarget.copy(car.model.position)
+    // Çarpmanın ilk yarım saniyesinde sarsıntı: bakılan noktayı rastgele titret
+    const shake = car.state.crashed ? Math.max(0, 0.5 - car.state.crashTime) * 1.6 : 0
+    lookTarget.x += (Math.random() - 0.5) * shake
+    lookTarget.y += (Math.random() - 0.5) * shake
+    camera.lookAt(lookTarget)
   } else {
     if (car.state.respawned) {
       camera.position.copy(desiredPosition) // yeniden doğunca hemen arkasına geç (aşağıdan uçarak gelmesin)

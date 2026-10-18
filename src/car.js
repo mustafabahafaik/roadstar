@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { trackCurve, ROAD_WIDTH } from './track.js'
-import { obstacles } from './obstacles.js'
+import { obstacles, TOWER_TOP_RATIO } from './obstacles.js'
+import { TRUCK_SIZE } from './truck.js'
 import { input } from './input.js'
 import { createCarModel } from './carModel.js'
 import { createThrusters } from './thrusters.js'
@@ -16,16 +17,41 @@ const GRAVITY = 36 // aşağı çeken ivme
 const HOVER_GRAVITY = 22 // havada Space basılı tutulunca roketler yerçekimini azaltır (~11 yükselir: tırları aşar)
 const ROAD_HALF = ROAD_WIDTH / 2 // arabanın merkezi bundan daha yana çıkarsa altında yol kalmaz → düşer
 const OFFSET_LIMIT = ROAD_HALF + 12 // yolun dışında da bir yere kadar kayabilir
-const RESPAWN_BACK = 40 // düştüğü yerin kaç birim gerisinde yeniden doğsun
+const FALL_RESPAWN_BACK = 40 // düştüğü yerin kaç birim gerisinde yeniden doğsun
+const CRASH_RESPAWN_BACK = 70 // çarptığı yerin kaç birim gerisinde yeniden doğsun
 const RESPAWN_SPEED = 15 // yeniden doğunca başlangıç hızı
 const FALL_TIME = 2 // en fazla kaç saniye düşsün
 const FALL_DEPTH = 40 // ya da yolun kaç birim altına inince yeniden doğsun
+const CRASH_TIME = 1.2 // çarptıktan kaç saniye sonra yeniden doğsun
 const OBSTACLE_CLEARANCE = 20 // yeniden doğma noktası bir engele bundan yakın olmasın (birim)
+
+// Arabanın çarpışma kutusu (carModel.js ölçüleri: boy ≈ 9.7, genişlik ≈ 4.1)
+const CAR_HALF_LENGTH = 4.8
+const CAR_HALF_WIDTH = 2.0
 
 const trackLength = trackCurve.getLength() // pistin toplam uzunluğu (birim)
 const up = new THREE.Vector3(0, 1, 0)
 
-export function createCar(scene) {
+// İki u değeri arasındaki en kısa uzaklık (birim). Turun başı/sonu dahil: 0.99 ile 0.01 arası 0.02 tur
+function trackGap(fromU, toU) {
+  return (((((toU - fromU) % 1) + 1.5) % 1) - 0.5) * trackLength
+}
+
+// Engellerin pist koordinatlarındaki kutuları: pist boyunca yarım derinlik, yandaki merkez ve
+// yarım genişlik, yükseklik. AABB (eksenlere hizalı kutu): her eksende ayrı ayrı üst üste binme kontrolü
+const obstacleBoxes = obstacles.map((o) => {
+  const center = o.offset * ROAD_HALF
+  if (o.type === 'wall') return { u: o.u, center, halfDepth: 1, halfWidth: o.width / 2, top: o.height }
+  if (o.type === 'tower') {
+    // Kule yukarı doğru incelir: kutunun boyutu yüksekliğe göre hesaplanır (bkz. boxSizeAt)
+    const bottomHalf = o.width / 2
+    return { u: o.u, center, bottomHalf, topHalf: bottomHalf * TOWER_TOP_RATIO, top: o.height + 0.4 }
+  }
+  return { u: o.u, center, halfDepth: TRUCK_SIZE.length / 2, halfWidth: TRUCK_SIZE.width / 2, top: TRUCK_SIZE.height }
+})
+
+// events: { onCrash, onFall } → main.js ekrana yazı çıkarmak için kullanır
+export function createCar(scene, events = {}) {
   const model = createCarModel()
   const thrusters = createThrusters(model, scene)
 
@@ -38,25 +64,69 @@ export function createCar(scene) {
     vy: 0, // dikey hız
     falling: false, // yolun dışına çıktı, aşağı düşüyor
     fallTime: 0, // ne zamandır düşüyor (saniye)
+    crashed: false, // bir engele çarptı
+    crashTime: 0, // ne zamandır çarpmış durumda (saniye)
     respawned: false, // bu karede yeniden doğdu mu (kamera ani geçiş yapsın diye main.js okur)
-    blink: 0, // yeniden doğduktan sonra yanıp sönme süresi (saniye)
+    blink: 0, // yeniden doğduktan sonra yanıp sönme süresi (saniye); bu sürede çarpışma yok
   }
   let thrustPower = 0 // roketlerin gücü (0 → 1), görsel efektler için
   let roll = 0 // yana yatma açısı (radyan)
   let pitch = 0 // burun yukarı/aşağı açısı (radyan)
+  let crashBackSpeed = 0 // çarpınca geriye sekme hızı
+  let crashSpinSide = 1 // çarpınca hangi yöne dönsün
   const previousPosition = new THREE.Vector3()
   const velocity = new THREE.Vector3() // arabanın dünyadaki hızı (duman için)
 
-  function update(dt) {
+  // Engelin, arabanın altının bulunduğu yükseklikteki yarım genişliği.
+  // Kule için tabandan tepeye doğru daralır (lerp); diğerleri her yükseklikte aynı
+  function halfSizeAt(b, height) {
+    if (b.bottomHalf === undefined) return { depth: b.halfDepth, width: b.halfWidth }
+    const t = THREE.MathUtils.clamp(height / b.top, 0, 1)
+    const half = THREE.MathUtils.lerp(b.bottomHalf, b.topHalf, t) * 0.9 // %10 tolerans: sıyırınca çarpmasın
+    return { depth: half, width: half }
+  }
+
+  // Araba kutusu herhangi bir engel kutusuyla üç eksende de üst üste biniyor mu?
+  function hitsObstacle() {
+    return obstacleBoxes.some((b) => {
+      if (state.height >= b.top) return false // arabanın altı engelin tepesinden yukarıda: üstünden geçiyor
+      const half = halfSizeAt(b, state.height)
+      return (
+        Math.abs(trackGap(state.u, b.u)) < CAR_HALF_LENGTH + half.depth && // pist boyunca
+        Math.abs(state.offset - b.center) < CAR_HALF_WIDTH + half.width // yanlara
+      )
+    })
+  }
+
+  function moveAlongTrack(distance) {
+    // u her zaman 0 ile 1 arasında kalsın: tur bitince başa dön (+1 negatif değere karşı)
+    state.u = (((state.u + distance / trackLength) % 1) + 1) % 1
+  }
+
+  // Yerçekimi + yola iniş. Altında yol yoksa düşmeye başlar
+  function applyGravity(dt, gravity) {
+    state.vy -= gravity * dt // her karede aşağı doğru hız ekle
+    state.height += state.vy * dt
+    if (state.height >= 0) return
+    const overRoad = Math.abs(state.offset) <= ROAD_HALF // altında yol var mı?
+    if (overRoad && !state.falling) {
+      state.height = 0 // yol var: üstüne in, içine gömülme
+      state.vy = 0
+    } else if (!state.falling) {
+      state.falling = true // altında yol yok: düşmeye başla
+      events.onFall?.()
+    }
+  }
+
+  function updateDriving(dt) {
     // 1) Hız: gaz, fren, sürtünme
     if (input.forward) state.speed += ACCELERATION * dt
     else if (input.brake) state.speed -= BRAKE * dt
     else state.speed -= DRAG * dt
     state.speed = THREE.MathUtils.clamp(state.speed, 0, MAX_SPEED) // clamp: değeri iki sınır arasında tut
 
-    // 2) Pist boyunca ilerle: mesafe / toplam uzunluk = u'daki değişim.
-    // u her zaman 0 ile 1 arasında kalsın: tur bitince başa dön (+1 negatif değere karşı)
-    state.u = (((state.u + (state.speed * dt) / trackLength) % 1) + 1) % 1
+    // 2) Pist boyunca ilerle
+    moveAlongTrack(state.speed * dt)
 
     // 3) Sağa-sola kayma (havadayken de çalışır)
     if (input.left) state.offset -= STRAFE_SPEED * dt
@@ -64,36 +134,56 @@ export function createCar(scene) {
     state.offset = THREE.MathUtils.clamp(state.offset, -OFFSET_LIMIT, OFFSET_LIMIT)
 
     // 4) Zıplama, roketle süzülme ve yerçekimi
-    const overRoad = Math.abs(state.offset) <= ROAD_HALF // altında yol var mı?
     const onGround = state.height <= 0 && !state.falling
     if (onGround && input.jump) {
       state.vy = JUMP_VELOCITY
       thrustPower = 1 // kalkışta roketler tam güç ateşlenir
     }
     const hovering = !onGround && input.jump
-    state.vy -= (hovering ? HOVER_GRAVITY : GRAVITY) * dt // her karede aşağı doğru hız ekle
-    state.height += state.vy * dt
-    if (state.height < 0) {
-      if (overRoad && !state.falling) {
-        state.height = 0 // yol var: üstüne in, içine gömülme
-        state.vy = 0
-      } else {
-        state.falling = true // altında yol yok (ya da zaten düşüyor): düşmeye devam
-      }
-    }
-
-    // Düşüş bitti mi? Yeterince aşağı indiyse ya da süre dolduysa geride yeniden doğ
-    if (state.falling) {
-      state.fallTime += dt
-      if (state.fallTime > FALL_TIME || state.height < -FALL_DEPTH) respawn()
-    }
-    if (state.blink > 0) state.blink -= dt
+    applyGravity(dt, hovering ? HOVER_GRAVITY : GRAVITY)
 
     // Roket gücü: yerdeyken söner, havada Space basılıysa tam, değilse yarım
     const targetPower = state.height <= 0 ? 0 : hovering ? 1 : 0.35
     thrustPower += (targetPower - thrustPower) * Math.min(1, dt * 6)
 
-    // 5) Durumu dünyadaki konuma çevir
+    // 5) Düşüş bitti mi? Yeterince aşağı indiyse ya da süre dolduysa geride yeniden doğ
+    if (state.falling) {
+      state.fallTime += dt
+      if (state.fallTime > FALL_TIME || state.height < -FALL_DEPTH) respawn(FALL_RESPAWN_BACK)
+      return
+    }
+
+    // 6) Çarpışma (yeniden doğduktan sonraki yanıp sönme süresinde yok)
+    if (state.blink <= 0 && hitsObstacle()) crash()
+  }
+
+  function crash() {
+    state.crashed = true
+    state.crashTime = 0
+    state.speed = 0
+    crashBackSpeed = -18 // geriye sek
+    crashSpinSide = Math.random() < 0.5 ? -1 : 1
+    state.vy = 9 // biraz havaya fırla
+    thrustPower = 0
+    thrusters.burst(model.position) // patlama: parlama + duman
+    events.onCrash?.()
+  }
+
+  function updateCrash(dt) {
+    state.crashTime += dt
+    crashBackSpeed *= 1 - Math.min(1, 2.5 * dt) // geri sekme yavaşça durur
+    moveAlongTrack(crashBackSpeed * dt)
+    applyGravity(dt, GRAVITY)
+    if (state.falling) state.fallTime += dt
+    if (state.crashTime > CRASH_TIME) respawn(CRASH_RESPAWN_BACK)
+  }
+
+  function update(dt) {
+    if (state.crashed) updateCrash(dt)
+    else updateDriving(dt)
+    if (state.blink > 0) state.blink -= dt
+
+    // Durumu dünyadaki konuma çevir
     const center = trackCurve.getPointAt(state.u)
     const tangent = trackCurve.getTangentAt(state.u)
     const side = new THREE.Vector3().crossVectors(tangent, up).normalize()
@@ -104,15 +194,17 @@ export function createCar(scene) {
       .addScaledVector(up, state.height)
     model.lookAt(model.position.clone().add(tangent)) // burnu gidiş yönüne
 
-    // 6) Yatma ve yunuslama: sağa kayarken sağa yatar, yükselirken burnu kalkar.
+    // Yatma ve yunuslama: sağa kayarken sağa yatar, yükselirken burnu kalkar.
     // rotateZ/rotateX arabanın kendi eksenlerinde döndürür (lookAt'tan sonra çağrılmalı)
-    const strafe = (input.right ? 1 : 0) - (input.left ? 1 : 0)
+    const strafe = state.crashed ? 0 : (input.right ? 1 : 0) - (input.left ? 1 : 0)
     roll += (strafe * 0.2 - roll) * Math.min(1, dt * 7)
     pitch += (THREE.MathUtils.clamp(-state.vy * 0.012, -0.2, 0.2) - pitch) * Math.min(1, dt * 5)
     model.rotateZ(roll)
     model.rotateX(pitch)
     // Düşerken burnunun üstüne doğru takla atsın
     if (state.falling) model.rotateX(Math.min(state.fallTime * 1.4, 1.3))
+    // Çarpınca kendi etrafında savrulsun (giderek yavaşlayan dönüş)
+    if (state.crashed) model.rotateY(crashSpinSide * 2.2 * (1 - Math.exp(-3 * state.crashTime)))
 
     // Yeniden doğduktan sonra yanıp sön (saniyede ~8 kez görünür/görünmez)
     model.visible = state.blink <= 0 || Math.floor(state.blink * 16) % 2 === 0
@@ -125,15 +217,12 @@ export function createCar(scene) {
     thrusters.update(dt, thrustPower, velocity, side)
   }
 
-  // Düştüğü yerin biraz gerisinde, yolun ortasında yeniden başlat
-  function respawn() {
-    let u = state.u - RESPAWN_BACK / trackLength
+  // Verilen mesafe kadar geride, yolun ortasında yeniden başlat
+  function respawn(backDistance) {
+    let u = state.u - backDistance / trackLength
     // Doğma noktası bir engelin dibine denk gelmesin: yakın engel varsa onun da gerisine al
     for (let tries = 0; tries < obstacles.length; tries++) {
-      const blocking = obstacles.find((o) => {
-        const gap = ((((o.u - u) % 1) + 1.5) % 1) - 0.5 // turun başı/sonu dahil en kısa fark (-0.5 … 0.5)
-        return Math.abs(gap) * trackLength < OBSTACLE_CLEARANCE
-      })
+      const blocking = obstacles.find((o) => Math.abs(trackGap(u, o.u)) < OBSTACLE_CLEARANCE)
       if (!blocking) break
       u = blocking.u - (OBSTACLE_CLEARANCE * 1.5) / trackLength
     }
@@ -144,6 +233,8 @@ export function createCar(scene) {
     state.speed = RESPAWN_SPEED
     state.falling = false
     state.fallTime = 0
+    state.crashed = false
+    state.crashTime = 0
     state.blink = 1.5
     state.respawned = true
     roll = 0

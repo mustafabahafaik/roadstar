@@ -11,3 +11,30 @@ body {
 canvas {
   display: block;
 }
+
+/* Ekran yazısı: "ÇARPTIN!" / "DÜŞTÜN!" — ortada belirip söner */
+.hud-message {
+  position: fixed;
+  top: 32%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font: 800 52px/1 system-ui, 'Segoe UI', sans-serif;
+  letter-spacing: 6px;
+  color: #fff;
+  text-shadow: 0 0 12px #ff2bd6, 0 0 32px #ff2bd6;
+  opacity: 0;
+  pointer-events: none; /* fareyi engellemesin */
+  user-select: none;
+}
+
+.hud-message.show {
+  animation: hud-pop 1.4s ease-out;
+}
+
+@keyframes hud-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  25% { transform: translate(-50%, -50%) scale(1); }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
