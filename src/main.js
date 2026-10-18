@@ -205,9 +205,18 @@ function updateChaseCamera(dt) {
   car.model.localToWorld(desiredPosition)
   car.model.localToWorld(lookTarget)
 
-  // lerp ile hedefe yavaşça yaklaş → kamera sarsılmadan, yumuşak takip eder
-  camera.position.lerp(desiredPosition, 1 - Math.exp(-10 * dt))
-  camera.lookAt(lookTarget)
+  if (car.state.falling) {
+    // Düşerken kamera yerinde kalır, sadece aşağı düşen arabaya bakar
+    camera.lookAt(car.model.position)
+  } else {
+    if (car.state.respawned) {
+      camera.position.copy(desiredPosition) // yeniden doğunca hemen arkasına geç (aşağıdan uçarak gelmesin)
+      car.state.respawned = false
+    }
+    // lerp ile hedefe yavaşça yaklaş → kamera sarsılmadan, yumuşak takip eder
+    camera.position.lerp(desiredPosition, 1 - Math.exp(-10 * dt))
+    camera.lookAt(lookTarget)
+  }
 
   // Hız hissi: hızlandıkça görüş açısı (FOV) genişler
   const targetFov = 60 + 18 * car.speedRatio()

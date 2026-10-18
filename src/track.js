@@ -19,7 +19,7 @@ const points = [
 // İkinci parametre true → son nokta ilk noktaya bağlanır, pist kapalı tur olur
 export const trackCurve = new THREE.CatmullRomCurve3(points, true)
 
-const ROAD_WIDTH = 16 // yolun genişliği
+export const ROAD_WIDTH = 16 // yolun genişliği (car.js da kullanıyor: yolun dışına çıkınca düşme)
 const SEGMENTS = 600 // eğri boyunca kaç noktada örnek alacağız (pist uzadıkça artmalı)
 
 // Eğri boyunca yolun sol ve sağ kenar noktalarını hesaplar
