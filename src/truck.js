@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { neon } from './neon.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 
 // Tırın kaba boyutları — ileride çarpışma kontrolünde de kullanacağız
@@ -11,10 +12,10 @@ const white = new THREE.MeshStandardMaterial({ color: 0xf2f4f7, metalness: 0.3, 
 const silver = new THREE.MeshStandardMaterial({ color: 0xd9dde3, metalness: 0.5, roughness: 0.4 })
 const dark = new THREE.MeshStandardMaterial({ color: 0x15161c, metalness: 0.2, roughness: 0.7 })
 const glass = new THREE.MeshStandardMaterial({ color: 0x0a0d18, metalness: 0.9, roughness: 0.1 })
-const headlight = new THREE.MeshBasicMaterial({ color: 0xdffbff, toneMapped: false })
-const amber = new THREE.MeshBasicMaterial({ color: 0xffa020, toneMapped: false })
-const cyanNeon = new THREE.MeshBasicMaterial({ color: 0x00f0ff, toneMapped: false })
-const pinkNeon = new THREE.MeshBasicMaterial({ color: 0xff2bd6, toneMapped: false })
+const headlight = neon(0xdffbff)
+const amber = neon(0xffa020)
+const cyanNeon = neon(0x00f0ff)
+const pinkNeon = neon(0xff2bd6)
 
 // Küçük yardımcı: geometri + malzeme + konum → gruba ekle
 function part(group, geometry, material, x, y, z) {

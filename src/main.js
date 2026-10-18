@@ -3,8 +3,11 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Sky } from 'three/addons/objects/Sky.js'
 import { Water } from 'three/addons/objects/Water.js'
+import { createPostFX } from './postfx.js'
+import { quality } from './settings.js'
 import { createTrack } from './track.js'
 import { createObstacles } from './obstacles.js'
+import { createCar } from './car.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -22,9 +25,15 @@ camera.position.set(0, 180, 380)
 // Tone mapping: gökyüzünün çok parlak (HDR) renklerini ekranın gösterebileceği aralığa sıkıştırır
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.pixelRatio)) // settings.js
 renderer.toneMapping = THREE.ACESFilmicToneMapping
 renderer.toneMappingExposure = 0.5
+
+// Gölgeler: güneş, sahneyi kendi bakış açısından bir "derinlik fotoğrafı" (shadow map) olarak çizer.
+// Bir piksel o fotoğraftaki nesnelerin arkasında kalıyorsa gölgededir.
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFShadowMap // kenarları yumuşatılmış gölge
+renderer.shadowMap.autoUpdate = false // her karede bir kez, postfx.js içinde güncelliyoruz
 document.body.appendChild(renderer.domElement)
 
 // --- 4. Güneş yönü: Sky ve Water aynı vektörü kullanır ---
@@ -49,6 +58,15 @@ skyUniforms.mieCoefficient.value = 0.005 // güneş etrafındaki hale
 skyUniforms.mieDirectionalG.value = 0.8
 skyUniforms.sunPosition.value.copy(sun)
 
+// Ortam haritası (environment map): gökyüzünün bir "fotoğrafını" çekip tüm metal/parlak
+// yüzeylere yansıma olarak veriyoruz. PMREM bu fotoğrafı pürüzlülüğe göre bulanıklaştırır.
+const pmrem = new THREE.PMREMGenerator(renderer)
+const envScene = new THREE.Scene()
+envScene.add(sky) // geçici olarak ayrı sahneye al, sadece gökyüzünü çek
+scene.environment = pmrem.fromScene(envScene).texture
+scene.environmentIntensity = 0.25 // gökyüzünün ham değerleri çok parlak, yansımayı kıs
+scene.add(sky) // gökyüzünü asıl sahneye geri koy
+
 // --- 6. Su: gökyüzünü yansıtan, normal map ile dalgalanan düzlem ---
 const waterNormals = new THREE.TextureLoader().load(
   '/textures/waternormals.jpg',
@@ -61,8 +79,8 @@ const waterNormals = new THREE.TextureLoader().load(
 )
 
 const water = new Water(new THREE.PlaneGeometry(10000, 10000), {
-  textureWidth: 512,
-  textureHeight: 512,
+  textureWidth: quality.waterResolution, // yansıma dokusu (settings.js)
+  textureHeight: quality.waterResolution,
   waterNormals,
   sunDirection: sun.clone(),
   sunColor: 0xffffff,
@@ -74,44 +92,168 @@ scene.add(water)
 
 // Işıklar: MeshStandardMaterial kullanan tır ve engel gövdeleri için.
 // HemisphereLight üstten gök rengi, alttan deniz rengi verir; DirectionalLight güneşin kendisi
-scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x0b3a55, 4))
-const sunLight = new THREE.DirectionalLight(0xffffff, 5)
-sunLight.position.copy(sun).multiplyScalar(100)
+scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x0b3a55, 0.5)) // ortam haritası da ışık verdiği için düşük
+const sunLight = new THREE.DirectionalLight(0xfff2e0, 1.8) // hafif sıcak güneş rengi
+sunLight.castShadow = true
+sunLight.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize) // gölge fotoğrafının çözünürlüğü
+sunLight.shadow.radius = 3 // gölge kenarı yumuşaklığı
+sunLight.shadow.bias = -0.0004 // "gölge sivilcesi" (shadow acne) denen çizgili hatayı önler
+sunLight.shadow.normalBias = 0.04
+// Gölge kamerası arabanın etrafındaki 80×80'lik alanı kapsar; tüm pisti kapsasaydı gölgeler bulanık olurdu
+const shadowCam = sunLight.shadow.camera
+shadowCam.left = shadowCam.bottom = -40
+shadowCam.right = shadowCam.top = 40
+shadowCam.near = 1
+shadowCam.far = 400
 scene.add(sunLight)
+scene.add(sunLight.target) // ışığın baktığı nokta; arabayı takip edecek
+
+// Hafif sis: uzaktaki nesneler havanın rengine karışır (atmosfer derinliği hissi)
+scene.fog = new THREE.FogExp2(0xc4d6e4, 0.0006)
 
 // --- 7. Pist: gökyüzünde kıvrılan neon rota (track.js) ---
 const track = createTrack()
 scene.add(track)
 
 // Engeller: atlanacak duvarlar ve sağa-sola kaçılacak bloklar (obstacles.js)
-scene.add(createObstacles())
+const obstacleGroup = createObstacles()
+scene.add(obstacleGroup)
+
+// Araba: W/S gaz-fren, A/D sağ-sol, Space zıpla (basılı tut → roketle süzül) (car.js)
+const car = createCar(scene)
+scene.add(car.model)
+
+// Hangi nesne gölge düşürür (castShadow), hangisi üstüne gölge alır (receiveShadow)
+for (const group of [track, obstacleGroup, car.model]) {
+  group.traverse((obj) => {
+    if (!obj.isMesh || obj.material.userData.bloom) return // neonlar ve alevler gölge düşürmez
+    obj.castShadow = true
+    obj.receiveShadow = true
+  })
+}
 
 // --- 8. OrbitControls: sol tık döndür, sağ tık kaydır, tekerlek yakınlaş ---
 const controls = new OrbitControls(camera, renderer.domElement)
 controls.target.set(0, 50, 0) // pistin ortası
 controls.maxPolarAngle = Math.PI * 0.495 // kamera suyun altına inmesin
-controls.minDistance = 40
+controls.minDistance = 10
 controls.maxDistance = 600
 controls.enableDamping = true // bırakınca yumuşakça yavaşlasın
-controls.update()
+controls.enabled = false // başlangıçta takip kamerası aktif
 
-// --- 9. Pencere boyutu değişince güncelle ---
+// C tuşu: takip kamerası ↔ serbest kamera
+window.addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyC') return
+  controls.enabled = !controls.enabled
+  if (controls.enabled) {
+    controls.target.copy(car.model.position)
+    controls.update()
+  }
+})
+
+// Takip kamerası: arabanın arkasında ve yukarısında durur.
+// Farenin sol tuşuyla sürükleyince arabanın etrafında döner, bırakınca yavaşça arkaya geri gelir.
+const look = {
+  yaw: 0, // arabanın etrafındaki açı (0 = tam arkası, π = önü)
+  height: 0, // varsayılan yüksekliğe eklenen
+  distance: 16, // arabaya uzaklık (tekerlekle değişir)
+  dragging: false,
+}
+const CAMERA_HEIGHT = 5.6
+const desiredPosition = new THREE.Vector3()
+const lookTarget = new THREE.Vector3()
+
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (controls.enabled || e.button !== 0) return
+  look.dragging = true
+  renderer.domElement.setPointerCapture(e.pointerId) // fare pencereden çıksa da sürükleme sürsün
+})
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!look.dragging) return
+  look.yaw -= e.movementX * 0.006 // movementX: son olaydan beri farenin yatay hareketi (piksel)
+  look.height = THREE.MathUtils.clamp(look.height + e.movementY * 0.03, -3.5, 10)
+})
+renderer.domElement.addEventListener('pointerup', () => (look.dragging = false))
+renderer.domElement.addEventListener(
+  'wheel',
+  (e) => {
+    if (controls.enabled) return
+    look.distance = THREE.MathUtils.clamp(look.distance + e.deltaY * 0.01, 9, 34)
+  },
+  { passive: true },
+)
+
+function updateChaseCamera(dt) {
+  // Fare bırakılınca açı ve yükseklik yavaşça sıfıra döner
+  if (!look.dragging) {
+    const back = 1 - Math.exp(-1.5 * dt)
+    look.yaw -= look.yaw * back
+    look.height -= look.height * back
+  }
+
+  // Arabanın kendi ekseninde kamera noktası: açıya göre çember üzerinde (sin → yan, cos → arka)
+  desiredPosition.set(
+    Math.sin(look.yaw) * look.distance,
+    CAMERA_HEIGHT + look.height,
+    -Math.cos(look.yaw) * look.distance,
+  )
+  // Arkadan bakarken arabanın önüne, yandan bakarken arabanın kendisine bak
+  lookTarget.set(0, 1.6, 12 * Math.cos(look.yaw))
+
+  // localToWorld: arabaya göre verilen noktayı dünya koordinatına çevirir (araba dönünce o da döner)
+  car.model.localToWorld(desiredPosition)
+  car.model.localToWorld(lookTarget)
+
+  // lerp ile hedefe yavaşça yaklaş → kamera sarsılmadan, yumuşak takip eder
+  camera.position.lerp(desiredPosition, 1 - Math.exp(-10 * dt))
+  camera.lookAt(lookTarget)
+
+  // Hız hissi: hızlandıkça görüş açısı (FOV) genişler
+  const targetFov = 60 + 18 * car.speedRatio()
+  camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-4 * dt))
+  camera.updateProjectionMatrix()
+}
+
+// --- 9. Post-processing: seçici bloom + kenar yumuşatma (postfx.js) ---
+// Gökyüzü ve su bloom geçişinde gizlenir → güneşe bakınca ekran artık beyaza boğulmaz
+const postfx = createPostFX(renderer, scene, camera, [sky, water], quality.msaa)
+
+// Güneş ışığı ve gölge kamerası arabayla birlikte hareket eder
+function updateSunLight() {
+  sunLight.target.position.copy(car.model.position)
+  sunLight.position.copy(car.model.position).addScaledVector(sun, 150)
+}
+
+// --- 10. Pencere boyutu değişince güncelle ---
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
   renderer.setSize(window.innerWidth, window.innerHeight)
+  postfx.setSize(window.innerWidth, window.innerHeight)
 })
 
-// --- 10. Animasyon döngüsü ---
+// --- 11. Animasyon döngüsü ---
 const timer = new THREE.Timer()
 
+// FPS sınırı: 120-144 Hz ekranlarda saniyede 144 kare yerine en fazla maxFps kare çiz → ekran kartı daha az ısınır
+const minFrameTime = 1000 / quality.maxFps
+let lastFrameTime = -Infinity
+
 renderer.setAnimationLoop((time) => {
+  if (time - lastFrameTime < minFrameTime - 2) return // -2 ms tolerans: 60 Hz ekranda kare atlamasın
+  lastFrameTime = time
   timer.update(time)
-  const delta = timer.getDelta()
+  // 0 → ilk karede negatif çıkabiliyor, 0.05 → sekme değişince dev bir sıçrama olmasın
+  const delta = THREE.MathUtils.clamp(timer.getDelta(), 0, 0.05)
 
   water.material.uniforms.time.value += delta // dalgaları ilerlet
   skyUniforms.time.value = time // bulutları kaydır
 
-  controls.update() // damping açıkken her karede çağrılmalı
-  renderer.render(scene, camera)
+  car.update(delta)
+
+  if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı
+  else updateChaseCamera(delta)
+
+  updateSunLight()
+  postfx.render() // renderer.render yerine: efektlerle birlikte çiz
 })

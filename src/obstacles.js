@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { neon } from './neon.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { trackCurve } from './track.js'
 import { createTruck } from './truck.js'
@@ -32,8 +33,8 @@ const bodyMaterial = new THREE.MeshStandardMaterial({
   metalness: 0.6,
   roughness: 0.35,
 })
-const pinkNeon = new THREE.MeshBasicMaterial({ color: 0xff2bd6, toneMapped: false })
-const cyanNeon = new THREE.MeshBasicMaterial({ color: 0x00f0ff, toneMapped: false })
+const pinkNeon = neon(0xff2bd6)
+const cyanNeon = neon(0x00f0ff)
 
 // Bariyer: yuvarlak köşeli koyu gövde + üstte ve ortada parlayan şeritler
 function createWall(width, height) {
