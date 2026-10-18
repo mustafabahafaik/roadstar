@@ -3,13 +3,13 @@
 
 const toCss = (hex) => `#${hex.toString(16).padStart(6, '0')}`
 
-export function createItemsHud(types, roomId, totalTokens) {
+export function createItemsHud(types, label, totalTokens) {
   const panel = document.createElement('div')
   panel.className = 'hud-panel'
 
   const slotTypes = types.filter((t) => t.key) // envanterde duranlar: Kalkan, Mıknatıs, Block Rush
   panel.innerHTML = `
-    <div class="hud-room">Oda: <b>${roomId}</b></div>
+    <div class="hud-room">${label}</div>
     <div class="hud-fuel">
       <span>İTİCİ</span>
       <div class="hud-bar"><div class="hud-bar-fill"></div></div>

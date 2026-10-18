@@ -7,20 +7,31 @@ export const MONAD_TESTNET = {
   explorer: 'https://testnet.monadexplorer.com',
   faucet: 'https://faucet.monad.xyz',
 }
-// contracts/ içinde deploy edince çıkan adres. Boşken oyun zincirsiz çalışır
-export const RACE_ITEMS_ADDRESS = '0x312Bce31256FC237DFAb4B289879942D17456Efd'
+// contracts/ içinde deploy edince çıkan Race adresi. Boşken oyun zincirsiz çalışır
+export const RACE_ADDRESS = '0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434'
 
-// Kontratın sadece kullandığımız fonksiyonları (insan okunur ABI)
-const raceItems = new Interface([
-  'function joinRoom(uint256 roomId)',
-  'function collect(uint256 roomId, uint256 index)',
-  'function useSkill(uint256 roomId, uint8 itemType)',
+// Race kontratının sadece kullandığımız fonksiyonları ve olayı (insan okunur ABI)
+const raceAbi = new Interface([
+  'function startRace() returns (uint256 raceId)',
+  'function collect(uint256 raceId, uint256 index)',
+  'function useSkill(uint256 raceId, uint8 itemType)',
+  'function finishRace(uint256 raceId)',
+  'event RaceStarted(uint256 indexed raceId, address indexed player, bytes32 seed)',
 ])
+
+// startRace makbuzundaki RaceStarted olayından yarış numarasını ve tohumu oku
+export function parseRaceStarted(receipt) {
+  for (const log of receipt.logs) {
+    const parsed = raceAbi.parseLog({ topics: log.topics, data: log.data })
+    if (parsed?.name === 'RaceStarted') return { raceId: parsed.args.raceId, seed: parsed.args.seed }
+  }
+  throw new Error('RaceStarted olayı bulunamadı')
+}
 
 // Gaz limitleri: ölçülen değer + taban ücret (21k) + pay. Monad ücreti limit üzerinden keser → dar tut.
 // estimateGas kullanmıyoruz: hem fazladan RPC (gecikme) hem de iyimser akışta yanlış sonuç verir
 // (ör. collect henüz işlenmeden useSkill tahmini "token yok" der)
-const GAS_LIMITS = { joinRoom: 80000n, collect: 120000n, useSkill: 75000n }
+const GAS_LIMITS = { startRace: 150000n, collect: 140000n, useSkill: 95000n, finishRace: 80000n }
 const RECEIPT_POLL_MS = 150 // onayı kaç ms'de bir soralım (ölçüm hassasiyeti)
 const FEE_REFRESH_MS = 20000 // gas fiyatını ne sıklıkla güncelleyelim
 const BALANCE_REFRESH_MS = 8000
@@ -54,7 +65,7 @@ const shortError = (err) => {
 
 // onChange: işlem listesi / bakiye değişince çağrılır (HUD'u güncellemek için)
 export function createChain(onChange = () => {}) {
-  const enabled = RACE_ITEMS_ADDRESS !== ''
+  const enabled = RACE_ADDRESS !== ''
   // staticNetwork: ağı her seferinde sormasın (chainId sabit) → daha az RPC çağrısı
   const provider = new JsonRpcProvider(MONAD_TESTNET.rpcUrl, MONAD_TESTNET.chainId, { staticNetwork: true })
   const wallet = loadBurnerWallet()
@@ -109,6 +120,7 @@ export function createChain(onChange = () => {}) {
           p.tx.ms = Math.round(performance.now() - p.startedAt)
           p.tx.status = receipt.status === '0x1' ? 'confirmed' : 'reverted'
           if (p.tx.status === 'reverted') p.tx.error = 'revert'
+          settle(p.tx, receipt)
           onChange()
         })
         .catch(() => {}), // geçici ağ hatası: bir sonraki turda tekrar sorulur
@@ -117,14 +129,24 @@ export function createChain(onChange = () => {}) {
     polling = false
   }, RECEIPT_POLL_MS)
 
-  // İşlem gönder. Beklemez: hemen döner, sonuç onChange ile HUD'a yansır (iyimser arayüz)
+  // İşlemin sonucunu bekleyenlere haber ver: onaylandıysa makbuzla çöz, değilse hatayla reddet
+  function settle(tx, receipt) {
+    if (tx.status === 'confirmed') tx.resolve(receipt)
+    else tx.reject(new Error(tx.error || tx.status))
+  }
+
+  // İşlem gönder. Beklemez: hemen döner, sonuç onChange ile HUD'a yansır (iyimser arayüz).
+  // Sonucu bekleyen olursa (ör. startRace'in tohumu) tx.confirmation sözünü (Promise) await edebilir
   function send(method, args, label) {
     const tx = { id: txs.length, label, status: 'pending', hash: null, ms: null, error: null }
+    tx.confirmation = new Promise((resolve, reject) => Object.assign(tx, { resolve, reject }))
+    tx.confirmation.catch(() => {}) // bekleyen yoksa "yakalanmamış hata" uyarısı çıkmasın
     txs.push(tx)
     onChange()
     if (!enabled) {
       tx.status = 'skipped'
       tx.error = 'kontrat adresi yok'
+      settle(tx)
       onChange()
       return tx
     }
@@ -137,6 +159,7 @@ export function createChain(onChange = () => {}) {
         if (balance - reserved < worstCaseCost) {
           tx.status = 'skipped'
           tx.error = 'bakiye yetersiz (faucet)'
+          settle(tx)
           onChange()
           return
         }
@@ -146,8 +169,8 @@ export function createChain(onChange = () => {}) {
         const signed = await wallet.signTransaction({
           type: 2, // EIP-1559 işlem
           chainId: MONAD_TESTNET.chainId,
-          to: RACE_ITEMS_ADDRESS,
-          data: raceItems.encodeFunctionData(method, args),
+          to: RACE_ADDRESS,
+          data: raceAbi.encodeFunctionData(method, args),
           nonce,
           gasLimit,
           maxFeePerGas: fees.maxFeePerGas,
@@ -162,6 +185,7 @@ export function createChain(onChange = () => {}) {
         } catch (err) {
           tx.status = 'error'
           tx.error = shortError(err)
+          settle(tx)
           reserved -= worstCaseCost
           // Bu nonce kullanılmadı: zincire tekrar sor ki sonraki işlemler boşluğu doldursun
           provider
@@ -174,6 +198,7 @@ export function createChain(onChange = () => {}) {
       .catch((err) => {
         tx.status = 'error'
         tx.error = shortError(err)
+        settle(tx)
         onChange()
       })
     return tx

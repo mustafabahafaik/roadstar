@@ -1,15 +1,16 @@
 import { AbiCoder, keccak256 } from 'ethers'
 
-// Tohumlu rastgelelik, zincirle uyumlu: her token için hash = keccak256(abi.encode(roomId, index)).
-// Aynı roomId + index → her zaman aynı hash. Kontrat (contracts/src/RaceItems.sol → itemAt)
-// birebir aynı hesabı yapar; böylece zincir, oyunun gösterdiği token türünü kendisi doğrulayabilir.
+// Tohumlu rastgelelik, zincirle uyumlu: her token için hash = keccak256(abi.encode(seed, index)).
+// Tohumu (seed) Race kontratı yarış başlarken verir. Aynı seed + index → her zaman aynı hash.
+// Kontrat (contracts/src/Race.sol → itemAt) birebir aynı hesabı yapar; böylece zincir, oyunun
+// gösterdiği token türünü kendisi doğrular. (abi.encode'da bytes32 ile uint256 aynı baytları üretir)
 
 // Token hash'i: iki sayıyı 32'şer bayt yan yana diz (abi.encode), keccak256'dan geçir.
 // BigInt: 256 bitlik sayılar için (normal JS sayıları ~2^53'ten sonra hassasiyet kaybeder)
 const abi = AbiCoder.defaultAbiCoder() // Solidity'deki abi.encode'un JS karşılığı
 
-export function itemHash(roomId, index) {
-  const data = abi.encode(['uint256', 'uint256'], [BigInt(roomId), BigInt(index)])
+export function itemHash(seed, index) {
+  const data = abi.encode(['uint256', 'uint256'], [BigInt(seed), BigInt(index)])
   return BigInt(keccak256(data))
 }
 

@@ -9,7 +9,8 @@ import { createTrack } from './track.js'
 import { createObstacles } from './obstacles.js'
 import { createCar } from './car.js'
 import { createItems, TOKEN_TYPES, TOKEN_COUNT } from './items.js'
-import { createChain } from './chain.js'
+import { createChain, parseRaceStarted } from './chain.js'
+import { hexlify, randomBytes } from 'ethers'
 import { createTxHud } from './txHud.js'
 
 // --- 1. Sahne ---
@@ -128,9 +129,15 @@ hudMessage.className = 'hud-message'
 document.body.appendChild(hudMessage)
 function showMessage(text) {
   hudMessage.textContent = text
-  hudMessage.classList.remove('show')
+  hudMessage.classList.remove('show', 'hold')
   void hudMessage.offsetWidth // tarayıcıyı yeniden hesaplamaya zorla → animasyon baştan başlasın
   hudMessage.classList.add('show')
+}
+// Sönmeyen yazı (geri sayım, bekleme): bir sonraki showMessage'a kadar ekranda kalır
+function holdMessage(text) {
+  hudMessage.textContent = text
+  hudMessage.classList.remove('show')
+  hudMessage.classList.add('hold')
 }
 
 // Araba: W/S gaz-fren, A/D sağ-sol, Space zıpla (basılı tut → roketle süzül) (car.js)
@@ -140,11 +147,13 @@ const car = createCar(scene, {
   onShieldBlock: () => showMessage('KALKAN!'),
   onFinish: () => {
     showMessage('BİTİŞ!')
+    if (race.onChain) chain.send('finishRace', [race.id], `finishRace #${race.id}`)
+    const collected = items?.collected ?? []
     txHud.showSummary({
       time: car.state.raceTime,
-      collected: items.collected.length,
+      collected: collected.length,
       total: TOKEN_COUNT,
-      gold: items.collected.filter((c) => c.type === 4).length,
+      gold: collected.filter((c) => c.type === 4).length,
     })
   },
 })
@@ -155,18 +164,48 @@ let txHud = null
 const chain = createChain(() => txHud?.refresh())
 txHud = createTxHud(() => chain)
 
-// Toplanabilir tokenlar ve skill'ler (items.js). Oda numarası adresten gelir: ?room=5
-// Aynı oda → aynı tokenlar aynı yerlerde (keccak tabanlı tohumlu rastgelelik, zincirle aynı).
-// ?room yoksa her yarış yeni oda: zincir aynı odada aynı tokenı ikinci kez toplatmaz
-const roomParam = Number(new URLSearchParams(window.location.search).get('room'))
-const roomId = Number.isSafeInteger(roomParam) && roomParam > 0 ? roomParam : Math.floor(Date.now() / 1000)
+// Yarış: numarayı ve tokenların tohumunu zincir verir (Race.startRace). Oyuncu tohumu seçemez,
+// önceden bilemez → "altını bol yarış" aranamaz. Zincir yoksa / cevap gelmezse zincirsiz yarış
+const race = { id: null, seed: null, onChain: false }
+let items = null // tohum gelince oluşturulur
+const START_TIMEOUT_MS = 15000
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// İyimser arayüz: etki oyunda hemen uygulanır (items.js), işlem arkada gider, oyun beklemez
-chain.send('joinRoom', [roomId], `joinRoom #${roomId}`)
-const items = createItems(scene, car, roomId, {
-  onCollect: (index, type) => chain.send('collect', [roomId, index], `collect #${index} ${TOKEN_TYPES[type].name}`),
-  onSkill: (type) => chain.send('useSkill', [roomId, type], `useSkill ${TOKEN_TYPES[type].name}`),
-})
+async function startRace() {
+  // Geri sayım sürerken startRace zincire gider (Monad'da ~0.5 sn: çoğu zaman geri sayım bitmeden döner)
+  const startTx = chain.enabled ? chain.send('startRace', [], 'startRace') : null
+  for (const n of ['3', '2', '1']) {
+    holdMessage(n)
+    await sleep(700)
+  }
+
+  if (startTx) {
+    if (startTx.status === 'pending') holdMessage('ZİNCİR BEKLENİYOR…')
+    try {
+      const timeout = sleep(START_TIMEOUT_MS).then(() => Promise.reject(new Error('zaman aşımı')))
+      const receipt = await Promise.race([startTx.confirmation, timeout]) // hangisi önce biterse
+      const { raceId, seed } = parseRaceStarted(receipt)
+      Object.assign(race, { id: raceId, seed, onChain: true })
+    } catch (err) {
+      console.warn('startRace olmadı, zincirsiz yarış:', err.message)
+    }
+  }
+  if (!race.onChain) {
+    // Zincirsiz: ?seed=123 verilirse hep aynı yerleşim (deneme için), yoksa rastgele 32 bayt
+    race.seed = new URLSearchParams(window.location.search).get('seed') ?? hexlify(randomBytes(32))
+  }
+
+  // İyimser arayüz: etki oyunda hemen uygulanır (items.js), işlem arkada gider, oyun beklemez
+  const label = race.onChain ? `Yarış #${race.id}` : 'Zincirsiz yarış'
+  items = createItems(scene, car, race.seed, label, {
+    onCollect: (index, type) =>
+      race.onChain && chain.send('collect', [race.id, index], `collect #${index} ${TOKEN_TYPES[type].name}`),
+    onSkill: (type) => race.onChain && chain.send('useSkill', [race.id, type], `useSkill ${TOKEN_TYPES[type].name}`),
+  })
+  car.state.locked = false
+  showMessage(race.onChain ? 'BAŞLA!' : 'BAŞLA! (zincirsiz)')
+}
+startRace()
 scene.add(car.model)
 
 // Hangi nesne gölge düşürür (castShadow), hangisi üstüne gölge alır (receiveShadow)
@@ -311,7 +350,7 @@ renderer.setAnimationLoop((time) => {
   skyUniforms.time.value = time // bulutları kaydır
 
   car.update(delta)
-  items.update(delta)
+  items?.update(delta) // ?. → items henüz yoksa (geri sayım) atla
   txHud.setProgress(car.progress())
 
   if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı

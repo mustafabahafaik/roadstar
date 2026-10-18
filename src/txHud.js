@@ -83,7 +83,7 @@ export function createTxHud(getChain) {
       <button class="tx-again">Yeni yarış</button>`
     summary.querySelector('.tx-again').onclick = () => {
       const url = new URL(window.location.href)
-      url.searchParams.delete('room') // yeni oda numarası = yeni yarış
+      url.searchParams.delete('seed') // sabit tohum verildiyse kaldır: yeni yarış = yeni tohum
       window.location.href = url.toString()
     }
   }

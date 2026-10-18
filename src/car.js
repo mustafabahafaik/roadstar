@@ -74,6 +74,7 @@ export function createCar(scene, events = {}) {
     distance: 0, // başlangıçtan beri net ilerleme (birim). Geri sekme ve yeniden doğma düşülür
     raceTime: 0, // yarış süresi (saniye): ilk harekette başlar
     finished: false, // bir tur tamamlandı mı
+    locked: true, // geri sayım bitene kadar sürülemez (main.js açar)
   }
   let thrustPower = 0 // roketlerin gücü (0 → 1), görsel efektler için
   let roll = 0 // yana yatma açısı (radyan)
@@ -126,7 +127,7 @@ export function createCar(scene, events = {}) {
   }
 
   function updateDriving(dt) {
-    const controls = state.finished ? FINISHED_INPUT : input
+    const controls = state.finished || state.locked ? FINISHED_INPUT : input
     // 1) Hız: gaz, fren, sürtünme. Block Rush (boost) en yüksek hızı ve ivmeyi artırır
     const maxSpeed = MAX_SPEED * state.boost
     if (controls.forward) state.speed += ACCELERATION * state.boost * dt
@@ -226,7 +227,7 @@ export function createCar(scene, events = {}) {
 
     // Yatma ve yunuslama: sağa kayarken sağa yatar, yükselirken burnu kalkar.
     // rotateZ/rotateX arabanın kendi eksenlerinde döndürür (lookAt'tan sonra çağrılmalı)
-    const controls = state.finished ? FINISHED_INPUT : input
+    const controls = state.finished || state.locked ? FINISHED_INPUT : input
     const strafe = state.crashed ? 0 : (controls.right ? 1 : 0) - (controls.left ? 1 : 0)
     roll += (strafe * 0.2 - roll) * Math.min(1, dt * 7)
     pitch += (THREE.MathUtils.clamp(-state.vy * 0.012, -0.2, 0.2) - pitch) * Math.min(1, dt * 5)

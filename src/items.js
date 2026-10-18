@@ -31,19 +31,19 @@ const RUSH_MULTIPLIER = 1.6 // Block Rush sırasında en yüksek hız ve ivme ç
 
 const up = new THREE.Vector3(0, 1, 0)
 
-// --- 1) Yerleşim: roomId + index → konum ve tür (her açılışta aynı) ---
+// --- 1) Yerleşim: seed + index → konum ve tür (aynı tohum → hep aynı yerleşim) ---
 // Tür, kontrattaki itemAt ile aynı formülden gelir (random.js); konum aynı hash'in başka bitlerinden
-export function planTokens(roomId) {
+export function planTokens(seed) {
   const plan = []
   for (let index = 0; index < TOKEN_COUNT; index++) {
-    const hash = itemHash(roomId, index)
+    const hash = itemHash(seed, index)
     const r = (slot) => hashFraction(hash, slot) // her özellik hash'in ayrı bir parçasından
 
     // Pist TOKEN_COUNT dilime bölünür; her token kendi diliminin içinde rastgele bir yerde
     const u = (index + 0.15 + 0.7 * r(0)) / TOKEN_COUNT
     const offset = (Math.floor(r(1) * 3) - 1) * LANE_OFFSET // −1, 0, 1 → sol, orta, sağ
     let height = r(2) < AIR_CHANCE ? 5 + r(3) * 3 : GROUND_HEIGHT
-    const type = itemTypeFromHash(hash) // zincirdeki RaceItems.itemAt(roomId, index) ile aynı
+    const type = itemTypeFromHash(hash) // zincirdeki Race.itemAt(seed, index) ile aynı
 
     // Bir engelin üstüne/içine denk geliyorsa engelin tepesinin üstüne kaldır (uçana ödül)
     for (const b of obstacleBoxes) {
@@ -150,8 +150,9 @@ function createCarEffects(carModel) {
 // --- 3) Toplama, envanter ve skill'ler ---
 // events: { onCollect(index, type), onSkill(type) } → main.js bunları zincire işlem olarak gönderir.
 // Oyundaki etki önce uygulanır, olay sonra bildirilir (iyimser arayüz: zinciri beklemeyiz)
-export function createItems(scene, car, roomId, events = {}) {
-  const hud = createItemsHud(TOKEN_TYPES, roomId, TOKEN_COUNT)
+// seed: tokenların tohumu (zincirden ya da zincirsizde rastgele), label: HUD'da görünen yarış adı
+export function createItems(scene, car, seed, label, events = {}) {
+  const hud = createItemsHud(TOKEN_TYPES, label, TOKEN_COUNT)
   const parts = createTokenParts()
   const effects = createCarEffects(car.model)
 
@@ -162,7 +163,7 @@ export function createItems(scene, car, roomId, events = {}) {
   let time = 0
 
   // Tokenları oluştur ve pistteki yerlerine koy
-  const tokens = planTokens(roomId).map((p) => {
+  const tokens = planTokens(seed).map((p) => {
     const center = trackCurve.getPointAt(p.u)
     const tangent = trackCurve.getTangentAt(p.u)
     const side = new THREE.Vector3().crossVectors(tangent, up).normalize()
@@ -257,5 +258,5 @@ export function createItems(scene, car, roomId, events = {}) {
     })
   }
 
-  return { update, collected, inventory, roomId }
+  return { update, collected, inventory }
 }
