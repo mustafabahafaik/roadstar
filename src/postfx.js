@@ -63,7 +63,7 @@ export function createPostFX(renderer, scene, camera, hiddenInBloom, msaaSamples
   const saved = new Map()
 
   function darken(obj) {
-    if (obj.isMesh && !obj.material.userData.bloom) {
+    if (obj.isMesh && !obj.material.userData?.bloom) { // ?. → malzeme dizisi olabilir
       saved.set(obj, obj.material)
       obj.material = black // önündeki neonları yine örtsün diye silmiyoruz, siyaha boyuyoruz
     } else if (obj.isSprite) {

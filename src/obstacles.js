@@ -9,17 +9,18 @@ import { createTruck } from './truck.js'
 // type   → 'wall' (tam duvar, atla) | 'tower' (yarım blok, kaç) | 'truck' (tır, kaç ya da atla)
 // offset → yolda yan konum (-1 = sol kenar, 0 = orta, 1 = sağ kenar)
 // width / height → wall ve tower için boyut (tırın boyutu truck.js'te sabit)
+// color  → tır rengi: 'white' | 'blue'
 export const obstacles = [
   { u: 0.06, type: 'wall', offset: 0, width: 16, height: 4 },
   { u: 0.14, type: 'tower', offset: -0.5, width: 8, height: 10 },
   { u: 0.22, type: 'tower', offset: 0.5, width: 8, height: 10 },
-  { u: 0.28, type: 'truck', offset: 0.5 },
+  { u: 0.28, type: 'truck', offset: 0.5, color: 'white' },
   { u: 0.35, type: 'wall', offset: 0, width: 16, height: 5 },
-  { u: 0.42, type: 'truck', offset: -0.5 },
+  { u: 0.42, type: 'truck', offset: -0.5, color: 'blue' },
   { u: 0.48, type: 'tower', offset: 0.5, width: 8, height: 10 },
   { u: 0.55, type: 'wall', offset: 0, width: 16, height: 4 },
   { u: 0.68, type: 'tower', offset: -0.5, width: 8, height: 10 },
-  { u: 0.74, type: 'truck', offset: 0.5 },
+  { u: 0.74, type: 'truck', offset: 0.5, color: 'white' },
   { u: 0.8, type: 'wall', offset: 0, width: 16, height: 6 },
   { u: 0.9, type: 'tower', offset: 0.5, width: 8, height: 10 },
 ]
@@ -101,7 +102,7 @@ export function createObstacles() {
     let model
     if (o.type === 'wall') model = createWall(o.width, o.height)
     else if (o.type === 'tower') model = createTower(o.width, o.height)
-    else model = createTruck()
+    else model = createTruck(o.color)
 
     // Yolda yana kaydır (modellerin tabanı y = 0'da, ekstra kaldırmaya gerek yok)
     model.position.copy(center).addScaledVector(side, o.offset * ROAD_HALF_WIDTH)

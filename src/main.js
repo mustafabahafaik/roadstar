@@ -126,7 +126,8 @@ scene.add(car.model)
 // Hangi nesne gölge düşürür (castShadow), hangisi üstüne gölge alır (receiveShadow)
 for (const group of [track, obstacleGroup, car.model]) {
   group.traverse((obj) => {
-    if (!obj.isMesh || obj.material.userData.bloom) return // neonlar ve alevler gölge düşürmez
+    // ?. → malzeme dizisi ([boya, cam, ...]) ise userData yoktur, hata vermeden undefined döner
+    if (!obj.isMesh || obj.material.userData?.bloom) return // neonlar ve alevler gölge düşürmez
     obj.castShadow = true
     obj.receiveShadow = true
   })

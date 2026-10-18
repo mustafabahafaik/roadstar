@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { neon } from './neon.js'
+import { smoothTable, loft } from './loft.js'
 
 // --- Ölçüler (ön taraf +z, taban y = 0, uzunluk ≈ 9.7, genişlik ≈ 4.1) ---
 const WHEEL_RADIUS = 0.72
@@ -41,35 +42,6 @@ const redPaint = new THREE.MeshStandardMaterial({ color: 0xb3121f, metalness: 0.
 const tailLight = neon(0xff1424, 3)
 const ledWhite = neon(0xe6f4ff, 3)
 
-// --- Yardımcı: tablo değerleri arasını yumuşakça doldur (Hermite interpolasyonu) ---
-// keys: [[z, değer], ...] — z sırasına göre. Her noktada eğim komşu noktalardan hesaplanır
-function smoothTable(keys) {
-  const n = keys.length
-  const slope = (i) => {
-    const a = keys[Math.max(0, i - 1)]
-    const b = keys[Math.min(n - 1, i + 1)]
-    return (b[1] - a[1]) / (b[0] - a[0])
-  }
-  return (z) => {
-    if (z <= keys[0][0]) return keys[0][1]
-    if (z >= keys[n - 1][0]) return keys[n - 1][1]
-    let i = 0
-    while (z > keys[i + 1][0]) i++
-    const [z1, v1] = keys[i]
-    const [z2, v2] = keys[i + 1]
-    const h = z2 - z1
-    const t = (z - z1) / h
-    const t2 = t * t
-    const t3 = t2 * t
-    return (
-      (2 * t3 - 3 * t2 + 1) * v1 +
-      (t3 - 2 * t2 + t) * h * slope(i) +
-      (-2 * t3 + 3 * t2) * v2 +
-      (t3 - t2) * h * slope(i + 1)
-    )
-  }
-}
-
 // --- Gövde profili: burundan (z = 5) kuyruğa (z = -4.75) ---
 const bodyTop = smoothTable([
   [-4.75, 1.42], [-4.58, 2.02], [-4.3, 2.13], [-3.6, 2.06], [-2.6, 1.98], [-1.2, 1.93],
@@ -95,65 +67,6 @@ const canopyTop = smoothTable([
   [-3.0, 2.0], [-2.4, 2.3], [-1.4, 2.56], [-0.3, 2.68], [0.6, 2.56], [1.3, 2.2], [1.95, 1.84],
 ])
 const canopyHalfWidth = smoothTable([[-3.0, 1.15], [-2.0, 1.42], [-0.5, 1.5], [0.8, 1.45], [1.95, 1.18]])
-
-// --- Loft: arka arkaya dizilmiş kesitlerden (halka) yüzey örer ---
-// section(z) → { top, bottom, halfWidth, powerTop, powerBottom, tumble }
-//   power  → kesitin köşeliliği (2 = elips, büyüdükçe yuvarlatılmış dikdörtgen)
-//   tumble → üst kısmın ne kadar daraldığı (arabaların yanları yukarı doğru içe yatar)
-function loft(zStart, zEnd, slices, ringSize, section) {
-  const positions = []
-  const indices = []
-
-  const ringPoint = (z, angle, s) => {
-    const c = Math.cos(angle)
-    const sn = Math.sin(angle)
-    const power = sn >= 0 ? s.powerTop : s.powerBottom
-    // Süper elips: |x|^p + |y|^p = 1 eğrisi üzerinde nokta
-    const sx = Math.sign(c) * Math.abs(c) ** (2 / power)
-    const sy = Math.sign(sn) * Math.abs(sn) ** (2 / power)
-    const cy = (s.top + s.bottom) / 2
-    const hy = (s.top - s.bottom) / 2
-    const narrow = 1 - s.tumble * Math.max(0, sy)
-    return [sx * s.halfWidth * narrow, cy + sy * hy, z]
-  }
-
-  for (let i = 0; i <= slices; i++) {
-    const z = zStart + ((zEnd - zStart) * i) / slices
-    const s = section(z)
-    for (let j = 0; j < ringSize; j++) positions.push(...ringPoint(z, (j / ringSize) * Math.PI * 2, s))
-  }
-  for (let i = 0; i < slices; i++) {
-    for (let j = 0; j < ringSize; j++) {
-      const a = i * ringSize + j
-      const b = i * ringSize + ((j + 1) % ringSize)
-      const c = a + ringSize
-      const d = b + ringSize
-      indices.push(a, b, c, b, d, c) // bu sıra yüzeyin dışarı bakmasını sağlar
-    }
-  }
-
-  // Uç kapakları (ayrı köşelerle, kenarları keskin kalsın)
-  const addCap = (z, facingFront) => {
-    const s = section(z)
-    const center = positions.length / 3
-    positions.push(0, (s.top + s.bottom) / 2, z)
-    for (let j = 0; j < ringSize; j++) positions.push(...ringPoint(z, (j / ringSize) * Math.PI * 2, s))
-    for (let j = 0; j < ringSize; j++) {
-      const p = center + 1 + j
-      const q = center + 1 + ((j + 1) % ringSize)
-      if (facingFront) indices.push(center, p, q)
-      else indices.push(center, q, p)
-    }
-  }
-  addCap(zEnd, true)
-  addCap(zStart, false)
-
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  return geometry
-}
 
 const bodySection = (z) => ({
   top: bodyTop(z),
