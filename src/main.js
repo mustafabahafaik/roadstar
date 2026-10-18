@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { Sky } from 'three/addons/objects/Sky.js'
 import { Water } from 'three/addons/objects/Water.js'
+import { createTrack } from './track.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -14,7 +15,7 @@ const camera = new THREE.PerspectiveCamera(
   1,
   20000,
 )
-camera.position.set(30, 30, 100)
+camera.position.set(0, 180, 380)
 
 // --- 3. Renderer ---
 // Tone mapping: gökyüzünün çok parlak (HDR) renklerini ekranın gösterebileceği aralığa sıkıştırır
@@ -70,23 +71,27 @@ const water = new Water(new THREE.PlaneGeometry(10000, 10000), {
 water.rotation.x = -Math.PI / 2 // düzlem dikey gelir, yere yatır
 scene.add(water)
 
-// --- 7. OrbitControls: sol tık döndür, sağ tık kaydır, tekerlek yakınlaş ---
+// --- 7. Pist: gökyüzünde kıvrılan neon rota (track.js) ---
+const track = createTrack()
+scene.add(track)
+
+// --- 8. OrbitControls: sol tık döndür, sağ tık kaydır, tekerlek yakınlaş ---
 const controls = new OrbitControls(camera, renderer.domElement)
-controls.target.set(0, 10, 0)
+controls.target.set(0, 50, 0) // pistin ortası
 controls.maxPolarAngle = Math.PI * 0.495 // kamera suyun altına inmesin
 controls.minDistance = 40
-controls.maxDistance = 200
+controls.maxDistance = 600
 controls.enableDamping = true // bırakınca yumuşakça yavaşlasın
 controls.update()
 
-// --- 8. Pencere boyutu değişince güncelle ---
+// --- 9. Pencere boyutu değişince güncelle ---
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight
   camera.updateProjectionMatrix()
   renderer.setSize(window.innerWidth, window.innerHeight)
 })
 
-// --- 9. Animasyon döngüsü ---
+// --- 10. Animasyon döngüsü ---
 const timer = new THREE.Timer()
 
 renderer.setAnimationLoop((time) => {
