@@ -10,7 +10,7 @@ export const TOKEN_TYPES = [
   { id: 0, name: 'Thrust Cell', color: 0x29e7ff }, // anında: itici yakıtını doldurur
   { id: 1, name: 'Kalkan', color: 0x3dff8a, key: '1' }, // envanter: bir sonraki çarpışmayı affeder
   { id: 2, name: 'Mıknatıs', color: 0xff3b6b, key: '2', duration: 5 }, // envanter: 5 sn tokenları çeker
-  { id: 3, name: 'Block Rush', color: 0x9b6bff, key: '3', duration: 3 }, // envanter: 3 sn hız patlaması
+  { id: 3, name: 'Block Rush', color: 0x9b6bff, key: '3', duration: 2 }, // envanter: boost başlatır (boost.js DURATION ile aynı)
   { id: 4, name: 'Altın Token', color: 0xffc23a }, // nadir: yarış sonunda NFT olacak, şimdilik sayılır
 ]
 const THRUST = 0
@@ -27,7 +27,6 @@ const AIR_CHANCE = 0.35 // tokenların ne kadarı havada olsun
 const PICKUP_RADIUS = 4.5 // araba merkezine bu kadar yaklaşınca toplanır
 const MAGNET_RADIUS = 35 // mıknatıs bu mesafedeki tokenları çeker
 const MAGNET_PULL_SPEED = 110 // çekilen tokenın hızı (birim / saniye)
-const RUSH_MULTIPLIER = 1.6 // Block Rush sırasında en yüksek hız ve ivme çarpanı
 
 const up = new THREE.Vector3(0, 1, 0)
 
@@ -148,7 +147,8 @@ function createCarEffects(carModel) {
 }
 
 // --- 3) Toplama, envanter ve skill'ler ---
-// events: { onCollect(index, type), onSkill(type) } → main.js bunları zincire işlem olarak gönderir.
+// events: { onCollect(index, type), onSkill(type), startBoost() } → main.js zincire işlem gönderir,
+// startBoost Block Rush için boost.js'i çağırır.
 // Oyundaki etki önce uygulanır, olay sonra bildirilir (iyimser arayüz: zinciri beklemeyiz)
 // seed: tokenların tohumu (zincirden ya da zincirsizde rastgele), label: HUD'da görünen yarış adı
 export function createItems(scene, car, seed, label, events = {}) {
@@ -191,7 +191,9 @@ export function createItems(scene, car, seed, label, events = {}) {
       car.state.shield = true
     } else {
       if (timers[type] > 0) return // zaten aktif
-      timers[type] = TOKEN_TYPES[type].duration
+      // Block Rush = boost.js'teki boost'u bar harcamadan başlatır. Başlayamazsa (aktif / bekliyor) harcama
+      if (type === RUSH && !events.startBoost?.()) return hud.toast('Boost şu an kullanılamaz', 0x8a8fa3)
+      timers[type] = TOKEN_TYPES[type].duration // HUD'daki süre çubuğu için
     }
     inventory[type]--
     hud.toast(`${TOKEN_TYPES[type].name} aktif!`, TOKEN_TYPES[type].color)
@@ -213,7 +215,6 @@ export function createItems(scene, car, seed, label, events = {}) {
 
     // Skill süreleri
     for (const type in timers) timers[type] = Math.max(0, timers[type] - dt)
-    car.state.boost = timers[RUSH] > 0 ? RUSH_MULTIPLIER : 1
 
     // Arabanın gövde merkezi (dünya koordinatı)
     carCenter.copy(car.model.position).addScaledVector(up, 1.3)

@@ -10,6 +10,7 @@ import { createObstacles } from './obstacles.js'
 import { createCar } from './car.js'
 import { createSmoke } from './smoke.js'
 import { createTricks } from './tricks.js'
+import { createBoost } from './boost.js'
 import { createItems, TOKEN_TYPES, TOKEN_COUNT } from './items.js'
 import { createChain, parseRaceStarted } from './chain.js'
 import { hexlify, randomBytes } from 'ethers'
@@ -164,10 +165,16 @@ const car = createCar(scene, smoke, {
   },
 })
 
-// Havada takla (tricks.js): W/S öne-arkaya, Q/E barrel roll; temiz inişte skor + boost
+// Boost (boost.js): bar dolunca Shift → 3 sn 2x hız. Durum: hazır → aktif → bekliyor
+const boost = createBoost(car, {
+  onStart: () => showMessage('BOOST!'),
+})
+
+// Havada takla (tricks.js): W/S öne-arkaya, Q/E barrel roll; temiz inişte skor + boost barı
 const tricks = createTricks(car, smoke, {
   onTrick: (text) => showMessage(text),
   onBadLanding: (text) => showMessage(text),
+  onCleanLanding: (turns) => boost.addCharge(0.25 * turns), // her tam tur: barın %25'i
 })
 
 // Zincir (chain.js): burner cüzdan + kendi nonce takibimizle işlem gönderme.
@@ -210,8 +217,11 @@ async function startRace() {
   // İyimser arayüz: etki oyunda hemen uygulanır (items.js), işlem arkada gider, oyun beklemez
   const label = race.onChain ? `Yarış #${race.id}` : 'Zincirsiz yarış'
   items = createItems(scene, car, race.seed, label, {
-    onCollect: (index, type) =>
-      race.onChain && chain.send('collect', [race.id, index], `collect #${index} ${TOKEN_TYPES[type].name}`),
+    onCollect: (index, type) => {
+      if (type === 3) boost.fill() // Block Rush toplandı: boost barı anında dolu
+      if (race.onChain) chain.send('collect', [race.id, index], `collect #${index} ${TOKEN_TYPES[type].name}`)
+    },
+    startBoost: () => boost.startBoost({ free: true, source: 'rush' }), // Block Rush skill'i (tuş 3)
     onSkill: (type) => race.onChain && chain.send('useSkill', [race.id, type], `useSkill ${TOKEN_TYPES[type].name}`),
   })
   car.state.locked = false
@@ -289,12 +299,10 @@ function updateChaseCamera(dt) {
     look.height -= look.height * back
   }
 
-  // Arabanın kendi ekseninde kamera noktası: açıya göre çember üzerinde (sin → yan, cos → arka)
-  desiredPosition.set(
-    Math.sin(look.yaw) * look.distance,
-    CAMERA_HEIGHT + look.height,
-    -Math.cos(look.yaw) * look.distance,
-  )
+  // Arabanın kendi ekseninde kamera noktası: açıya göre çember üzerinde (sin → yan, cos → arka).
+  // Boost sırasında biraz geri çekil (intensity 0 → 1 yumuşak geçtiği için geri dönüş de yumuşak)
+  const distance = look.distance + 5 * boost.intensity
+  desiredPosition.set(Math.sin(look.yaw) * distance, CAMERA_HEIGHT + look.height, -Math.cos(look.yaw) * distance)
   // Arkadan bakarken arabanın önüne, yandan bakarken arabanın kendisine bak
   lookTarget.set(0, 1.6, 12 * Math.cos(look.yaw))
 
@@ -318,11 +326,16 @@ function updateChaseCamera(dt) {
     }
     // lerp ile hedefe yavaşça yaklaş → kamera sarsılmadan, yumuşak takip eder
     camera.position.lerp(desiredPosition, 1 - Math.exp(-10 * dt))
+    // Boost başlangıcında kısa sarsıntı: bakılan noktayı titret (kamera konumu bozulmaz)
+    if (boost.shake > 0) {
+      lookTarget.x += (Math.random() - 0.5) * 1.2 * boost.shake
+      lookTarget.y += (Math.random() - 0.5) * 1.2 * boost.shake
+    }
     camera.lookAt(lookTarget)
   }
 
-  // Hız hissi: hızlandıkça görüş açısı (FOV) genişler
-  const targetFov = 60 + 18 * car.speedRatio()
+  // Hız hissi: hızlandıkça görüş açısı (FOV) 62 → 72 genişler, boost'ta 90'a kadar
+  const targetFov = 62 + 10 * Math.min(1, car.speedRatio()) + 18 * boost.intensity
   camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-4 * dt))
   camera.updateProjectionMatrix()
 }
@@ -364,6 +377,7 @@ renderer.setAnimationLoop((time) => {
 
   car.update(delta)
   tricks.update(delta) // car.update'ten sonra: inişi yakalar, sonraki karenin takla dönüşünü hazırlar
+  boost.update(delta) // durum makinesi + sonraki kare için hız çarpanı + alev / hız çizgisi / HUD
   smoke.update(delta) // bu karede üretilen tüm pufları da ilerlet
   items?.update(delta) // ?. → items henüz yoksa (geri sayım) atla
   txHud.setProgress(car.progress())

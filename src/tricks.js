@@ -11,8 +11,6 @@ const CLEAN_LANDING = THREE.MathUtils.degToRad(30) // bundan az eğik iniş = te
 const SETTLE_SPEED = 12 // yerde düzleşme hızı (slerp)
 const SCORE_PER_ROLL = 100
 const SCORE_PER_FLIP = 150
-const BOOST_PER_TURN = 12 // temiz inişte tur başına hız artışı (birim/sn), fazlası yavaşça söner
-const MAX_BOOST = 36
 const SIDE_PUFF_RATE = 70 // yan itici: saniyede puf (her meme için)
 const TRICK_PUFF_RATE = 40 // takla sırasında tam hızda saniyede puf
 
@@ -34,7 +32,7 @@ function moveTowards(current, target, maxDelta) {
   return current + Math.sign(target - current) * maxDelta
 }
 
-// events: { onTrick(text), onBadLanding(text) } → main.js ekrana yazı çıkarır
+// events: { onTrick(text), onBadLanding(text), onCleanLanding(turns) } → main.js yazı çıkarır, boost barını doldurur
 export function createTricks(car, smoke, events = {}) {
   const spin = { flip: 0, roll: 0 } // açısal hız (rad/sn), arabanın yerel X ve Z eksenleri
   const spun = { flip: 0, roll: 0 } // bu sıçrayışta toplam dönüş (işaretli: sağa + sola = sıfırlar)
@@ -77,7 +75,7 @@ export function createTricks(car, smoke, events = {}) {
       if (rolls + flips > 0) {
         const points = rolls * SCORE_PER_ROLL + flips * SCORE_PER_FLIP
         score += points
-        car.state.speed += Math.min(MAX_BOOST, (rolls + flips) * BOOST_PER_TURN) // kısa boost
+        events.onCleanLanding?.(rolls + flips) // main.js: boost barını tur başına %25 doldurur
         const parts = []
         if (rolls) parts.push(`BARREL ROLL x${rolls}`)
         if (flips) parts.push(`${spun.flip > 0 ? 'FRONT FLIP' : 'BACKFLIP'} x${flips}`)

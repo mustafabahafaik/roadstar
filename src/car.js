@@ -29,7 +29,8 @@ const CRASH_TIME = 1.2 // çarptıktan kaç saniye sonra yeniden doğsun
 const OBSTACLE_CLEARANCE = 20 // yeniden doğma noktası bir engele bundan yakın olmasın (birim)
 const FUEL_USE = 0.45 // süzülürken saniyede harcanan yakıt (dolu depo ≈ 2.2 sn süzülme)
 const FUEL_REGEN = 0.05 // yerdeyken saniyede dolan yakıt (boştan dolmaya 20 sn; Thrust Cell anında doldurur)
-const BOOST_SLOWDOWN = 40 // Block Rush bitince fazla hız saniyede bu kadar azalır
+const BOOST_THRUST = 2.5 // boost aktifken hedef hıza yaklaşma hızı (büyüdükçe daha sert hızlanır)
+const OVERSPEED_DECAY = 2 // boost bitince sınırın üstündeki fazla hızın sönme hızı (üstel, yumuşak)
 
 // Arabanın çarpışma kutusu (carModel.js ölçüleri: boy ≈ 9.7, genişlik ≈ 4.1)
 const CAR_HALF_LENGTH = 4.8
@@ -72,7 +73,8 @@ export function createCar(scene, smoke, events = {}) {
     blink: 0, // yeniden doğduktan sonra yanıp sönme süresi (saniye); bu sürede çarpışma yok
     fuel: 1, // itici yakıtı (0 → 1). items.js: Thrust Cell doldurur
     shield: false, // kalkan açık mı. items.js: 1 tuşu açar; bir çarpışmayı affeder
-    boost: 1, // hız çarpanı. items.js: Block Rush sırasında 1.6
+    boost: 1, // en yüksek hız çarpanı (boost.js yazar: 1 → 2 yumuşak geçiş)
+    boostThrust: false, // boost aktif mi (boost.js): aktifken gaza basılmasa da hedef hıza yaklaşır
     distance: 0, // başlangıçtan beri net ilerleme (birim). Geri sekme ve yeniden doğma düşülür
     raceTime: 0, // yarış süresi (saniye): ilk harekette başlar
     finished: false, // bir tur tamamlandı mı
@@ -137,12 +139,16 @@ export function createCar(scene, smoke, events = {}) {
     const maxSpeed = MAX_SPEED * state.boost
     const airborne = state.height > 0 && !state.falling
     if (!airborne) {
-      if (controls.forward) state.speed += ACCELERATION * state.boost * dt
-      else if (controls.brake) state.speed -= BRAKE * dt
+      if (controls.forward) {
+        // Gaz hızı en fazla sınıra kadar artırır; sınırın üstündeyse (boost yeni bittiyse) ekleme yapmaz
+        if (state.speed < maxSpeed) state.speed = Math.min(maxSpeed, state.speed + ACCELERATION * state.boost * dt)
+      } else if (controls.brake) state.speed -= BRAKE * dt
       else state.speed -= DRAG * dt
     }
-    // Sınırın üstündeyse (Rush yeni bittiyse) birden değil yavaşça normale in
-    if (state.speed > maxSpeed) state.speed = Math.max(maxSpeed, state.speed - BOOST_SLOWDOWN * dt)
+    // Boost: hedef hıza yumuşakça yaklaş (lerp). 1 − e^(−k·dt) → her kare hızında aynı ivme eğrisi
+    if (state.boostThrust) state.speed += (maxSpeed - state.speed) * (1 - Math.exp(-BOOST_THRUST * dt))
+    // Sınırın üstündeyse (boost yeni bittiyse) birden değil, fazlası üstel olarak sönsün
+    if (state.speed > maxSpeed) state.speed = maxSpeed + (state.speed - maxSpeed) * Math.exp(-OVERSPEED_DECAY * dt)
     state.speed = Math.max(0, state.speed)
 
     // 2) Pist boyunca ilerle
