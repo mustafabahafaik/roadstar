@@ -200,6 +200,15 @@ export function createItems(scene, car, seed, label, events = {}) {
     events.onSkill?.(type)
   }
 
+  // Envanterden bir kalkan harca (düşme cezası, fall.js). Zincirde de yakılsın diye onSkill gider
+  function consumeShield() {
+    if (inventory[SHIELD] <= 0) return false
+    inventory[SHIELD]--
+    hud.toast('Kalkan gitti', TOKEN_TYPES[SHIELD].color)
+    events.onSkill?.(SHIELD)
+    return true
+  }
+
   // 1, 2, 3 tuşları (üst sıra ya da sayı tuş takımı). e.repeat: basılı tutunca tekrar tetiklenmesin
   const keyToType = { Digit1: SHIELD, Digit2: MAGNET, Digit3: RUSH, Numpad1: SHIELD, Numpad2: MAGNET, Numpad3: RUSH }
   window.addEventListener('keydown', (e) => {
@@ -259,5 +268,5 @@ export function createItems(scene, car, seed, label, events = {}) {
     })
   }
 
-  return { update, collected, inventory }
+  return { update, collected, inventory, consumeShield }
 }

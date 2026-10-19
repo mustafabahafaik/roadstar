@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { trackCurve, trackLength, trackDistance, ROAD_WIDTH } from './track.js'
+import { trackCurve, trackLength, trackDistance, TRACK_WIDTH } from './track.js'
 import { obstacles, TOWER_TOP_RATIO } from './obstacles.js'
 import { TRUCK_SIZE } from './truck.js'
 import { input } from './input.js'
@@ -18,13 +18,13 @@ const STRAFE_SPEED = 14 // sağa-sola kayma hızı
 const JUMP_VELOCITY = 22 // zıplama anındaki yukarı hız (bırakınca ~6.7 yükselir: duvarları aşar)
 const GRAVITY = 36 // aşağı çeken ivme
 const HOVER_GRAVITY = 22 // havada Space basılı tutulunca roketler yerçekimini azaltır (~11 yükselir: tırları aşar)
-const ROAD_HALF = ROAD_WIDTH / 2 // arabanın merkezi bundan daha yana çıkarsa altında yol kalmaz → düşer
+const ROAD_HALF = TRACK_WIDTH / 2 // pistin kenarı (merkezden uzaklık)
+const FALL_MARGIN = 1 // hoşgörü: arabanın MERKEZİ kenarı bu kadar geçince düşer (gövdenin yarısı zaten dışarıda)
+export const FALL_EDGE = ROAD_HALF + FALL_MARGIN // düşme sınırı: merkez bundan daha yana çıkarsa altında yol yok
 const OFFSET_LIMIT = ROAD_HALF + 12 // yolun dışında da bir yere kadar kayabilir
 const FALL_RESPAWN_BACK = 40 // düştüğü yerin kaç birim gerisinde yeniden doğsun
 const CRASH_RESPAWN_BACK = 70 // çarptığı yerin kaç birim gerisinde yeniden doğsun
 const RESPAWN_SPEED = 15 // yeniden doğunca başlangıç hızı
-const FALL_TIME = 2 // en fazla kaç saniye düşsün
-const FALL_DEPTH = 40 // ya da yolun kaç birim altına inince yeniden doğsun
 const CRASH_TIME = 1.2 // çarptıktan kaç saniye sonra yeniden doğsun
 const OBSTACLE_CLEARANCE = 20 // yeniden doğma noktası bir engele bundan yakın olmasın (birim)
 const FUEL_USE = 0.45 // süzülürken saniyede harcanan yakıt (dolu depo ≈ 2.2 sn süzülme)
@@ -34,7 +34,7 @@ const OVERSPEED_DECAY = 2 // boost bitince sınırın üstündeki fazla hızın 
 
 // Arabanın çarpışma kutusu (carModel.js ölçüleri: boy ≈ 9.7, genişlik ≈ 4.1)
 const CAR_HALF_LENGTH = 4.8
-const CAR_HALF_WIDTH = 2.0
+export const CAR_HALF_WIDTH = 2.0
 
 const up = new THREE.Vector3(0, 1, 0)
 
@@ -122,7 +122,7 @@ export function createCar(scene, smoke, events = {}) {
     state.vy -= gravity * dt // her karede aşağı doğru hız ekle
     state.height += state.vy * dt
     if (state.height >= 0) return
-    const overRoad = Math.abs(state.offset) <= ROAD_HALF // altında yol var mı?
+    const overRoad = Math.abs(state.offset) <= FALL_EDGE // altında yol var mı? (merkez + hoşgörü payı)
     if (overRoad && !state.falling) {
       state.height = 0 // yol var: üstüne in, içine gömülme
       state.vy = 0
@@ -175,10 +175,9 @@ export function createCar(scene, smoke, events = {}) {
     const targetPower = state.height <= 0 ? 0 : hovering ? 1 : 0.35
     thrustPower += (targetPower - thrustPower) * Math.min(1, dt * 6)
 
-    // 5) Düşüş bitti mi? Yeterince aşağı indiyse ya da süre dolduysa geride yeniden doğ
+    // 5) Düşüyorsa: süreyi say, geri dönüşü fall.js yönetir (gerçek zamanla 2 sn sonra respawnAfterFall)
     if (state.falling) {
       state.fallTime += dt
-      if (state.fallTime > FALL_TIME || state.height < -FALL_DEPTH) respawn(FALL_RESPAWN_BACK)
       return
     }
 
@@ -219,10 +218,7 @@ export function createCar(scene, smoke, events = {}) {
   function update(dt) {
     // Yarış süresi ilk harekette başlar, bir tur tamamlanınca durur
     if (!state.finished && (state.speed > 0 || state.raceTime > 0)) state.raceTime += dt
-    if (!state.finished && state.distance >= trackLength) {
-      state.finished = true
-      events.onFinish?.()
-    }
+    if (!state.finished && state.distance >= trackLength) endRace('lap')
 
     if (state.crashed) updateCrash(dt)
     else updateDriving(dt)
@@ -250,8 +246,6 @@ export function createCar(scene, smoke, events = {}) {
     pitch += (THREE.MathUtils.clamp(-state.vy * 0.012, -0.2, 0.2) - pitch) * Math.min(1, dt * 5)
     model.rotateZ(roll)
     model.rotateX(pitch)
-    // Düşerken burnunun üstüne doğru takla atsın
-    if (state.falling) model.rotateX(Math.min(state.fallTime * 1.4, 1.3))
     // Çarpınca kendi etrafında savrulsun (giderek yavaşlayan dönüş)
     if (state.crashed) model.rotateY(crashSpinSide * 2.2 * (1 - Math.exp(-3 * state.crashTime)))
 
@@ -304,10 +298,27 @@ export function createCar(scene, smoke, events = {}) {
     state.wobble = 0
   }
 
+  // Yarışı bitir. reason: 'lap' (tur tamamlandı) | 'fall' (kalkansız düştü)
+  function endRace(reason) {
+    if (state.finished) return
+    state.finished = true
+    events.onFinish?.(reason)
+  }
+
   // 0 → 1: kamera efektleri için hızın maksimuma oranı
   const speedRatio = () => state.speed / MAX_SPEED
   // 0 → 1: turun ne kadarı tamamlandı
   const progress = () => THREE.MathUtils.clamp(state.distance / trackLength, 0, 1)
 
-  return { model, frame, state, velocity, update, speedRatio, progress }
+  return {
+    model,
+    frame,
+    state,
+    velocity,
+    update,
+    speedRatio,
+    progress,
+    endRace,
+    respawnAfterFall: () => respawn(FALL_RESPAWN_BACK), // fall.js çağırır
+  }
 }

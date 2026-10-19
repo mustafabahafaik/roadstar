@@ -412,3 +412,14 @@ canvas {
   from { box-shadow: 0 0 0 rgba(255, 59, 214, 0); }
   to { box-shadow: 0 0 18px rgba(255, 59, 214, 0.6); }
 }
+
+/* --- Düşüş efekti (fall.js): kenarları karartan vignette --- */
+.fall-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(8, 0, 16, 0.78) 100%);
+  opacity: 0;
+  transition: opacity 0.45s ease;
+}
+.fall-vignette.show { opacity: 1; }

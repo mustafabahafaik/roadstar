@@ -25,7 +25,8 @@ export function trackDistance(fromU, toU) {
   return (((((toU - fromU) % 1) + 1.5) % 1) - 0.5) * trackLength
 }
 
-export const ROAD_WIDTH = 16 // yolun genişliği (car.js da kullanıyor: yolun dışına çıkınca düşme)
+// Pist genişliği: TEK kaynak. Yol geometrisi, düşme kontrolü (car.js), engeller (obstacles.js) bunu kullanır
+export const TRACK_WIDTH = 16
 const SEGMENTS = 600 // eğri boyunca kaç noktada örnek alacağız (pist uzadıkça artmalı)
 
 // Eğri boyunca yolun sol ve sağ kenar noktalarını hesaplar
@@ -43,8 +44,8 @@ function computeEdges() {
     // gidiş yönü × yukarı = yolun sağ tarafını gösteren yatay vektör
     const side = new THREE.Vector3().crossVectors(tangent, up).normalize()
 
-    left.push(center.clone().addScaledVector(side, -ROAD_WIDTH / 2))
-    right.push(center.clone().addScaledVector(side, ROAD_WIDTH / 2))
+    left.push(center.clone().addScaledVector(side, -TRACK_WIDTH / 2))
+    right.push(center.clone().addScaledVector(side, TRACK_WIDTH / 2))
   }
 
   return { left, right }

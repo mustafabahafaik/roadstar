@@ -11,6 +11,9 @@ import { createCar } from './car.js'
 import { createSmoke } from './smoke.js'
 import { createTricks } from './tricks.js'
 import { createBoost } from './boost.js'
+import { createGameState, GAME_STATE } from './gameState.js'
+import { createCameraModes } from './cameraModes.js'
+import { createFall } from './fall.js'
 import { createItems, TOKEN_TYPES, TOKEN_COUNT } from './items.js'
 import { createChain, parseRaceStarted } from './chain.js'
 import { hexlify, randomBytes } from 'ethers'
@@ -146,14 +149,21 @@ function holdMessage(text) {
 // Ortak duman havuzu (smoke.js): alt itici, yan iticiler, takla pufları, patlama
 const smoke = createSmoke(scene, renderer)
 
+// Oyun durumu (gameState.js): countdown → racing ⇄ falling → finished
+const gameState = createGameState()
+
 // Araba: W/S gaz-fren, A/D sağ-sol, Space zıpla (basılı tut → roketle süzül) (car.js)
 const car = createCar(scene, smoke, {
   onCrash: () => showMessage('ÇARPTIN!'),
-  onFall: () => showMessage('DÜŞTÜN!'),
+  onFall: () => fall.start(), // altında yol kalmadı: düşüş sahnesi (fall.js)
   onShieldBlock: () => showMessage('KALKAN!'),
-  onFinish: () => {
-    showMessage('BİTİŞ!')
-    if (race.onChain) chain.send('finishRace', [race.id], `finishRace #${race.id}`)
+  // reason: 'lap' (tur bitti) | 'fall' (kalkansız düştü → zincire finishRace gitmez, yarış yarım kaldı)
+  onFinish: (reason) => {
+    gameState.set(GAME_STATE.FINISHED)
+    if (reason === 'lap') {
+      showMessage('BİTİŞ!')
+      if (race.onChain) chain.send('finishRace', [race.id], `finishRace #${race.id}`)
+    }
     const collected = items?.collected ?? []
     txHud.showSummary({
       time: car.state.raceTime,
@@ -161,6 +171,7 @@ const car = createCar(scene, smoke, {
       total: TOKEN_COUNT,
       gold: collected.filter((c) => c.type === 4).length,
       score: tricks.score,
+      reason,
     })
   },
 })
@@ -225,6 +236,7 @@ async function startRace() {
     onSkill: (type) => race.onChain && chain.send('useSkill', [race.id, type], `useSkill ${TOKEN_TYPES[type].name}`),
   })
   car.state.locked = false
+  gameState.set(GAME_STATE.RACING)
   showMessage(race.onChain ? 'BAŞLA!' : 'BAŞLA! (zincirsiz)')
 }
 startRace()
@@ -259,86 +271,25 @@ window.addEventListener('keydown', (e) => {
   }
 })
 
-// Takip kamerası: arabanın arkasında ve yukarısında durur.
-// Farenin sol tuşuyla sürükleyince arabanın etrafında döner, bırakınca yavaşça arkaya geri gelir.
-const look = {
-  yaw: 0, // arabanın etrafındaki açı (0 = tam arkası, π = önü)
-  height: 0, // varsayılan yüksekliğe eklenen
-  distance: 16, // arabaya uzaklık (tekerlekle değişir)
-  dragging: false,
-}
-const CAMERA_HEIGHT = 5.6
-const desiredPosition = new THREE.Vector3()
-const lookTarget = new THREE.Vector3()
-
-renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (controls.enabled || e.button !== 0) return
-  look.dragging = true
-  renderer.domElement.setPointerCapture(e.pointerId) // fare pencereden çıksa da sürükleme sürsün
+// Kamera modları (cameraModes.js): takip + düşüş yan kamerası, aralarında yumuşak geçiş
+const cameraModes = createCameraModes({
+  camera,
+  domElement: renderer.domElement,
+  car,
+  boost,
+  isOrbitEnabled: () => controls.enabled,
 })
-renderer.domElement.addEventListener('pointermove', (e) => {
-  if (!look.dragging) return
-  look.yaw -= e.movementX * 0.006 // movementX: son olaydan beri farenin yatay hareketi (piksel)
-  look.height = THREE.MathUtils.clamp(look.height + e.movementY * 0.03, -3.5, 10)
+
+// Düşüş sahnesi (fall.js): ağır çekim, yan kamera, dönüş, kesik duman, vignette, kalkan cezası
+const fall = createFall({
+  car,
+  smoke,
+  scene,
+  gameState,
+  cameraModes,
+  getItems: () => items,
+  onMessage: (text) => showMessage(text),
 })
-renderer.domElement.addEventListener('pointerup', () => (look.dragging = false))
-renderer.domElement.addEventListener(
-  'wheel',
-  (e) => {
-    if (controls.enabled) return
-    look.distance = THREE.MathUtils.clamp(look.distance + e.deltaY * 0.01, 9, 34)
-  },
-  { passive: true },
-)
-
-function updateChaseCamera(dt) {
-  // Fare bırakılınca açı ve yükseklik yavaşça sıfıra döner
-  if (!look.dragging) {
-    const back = 1 - Math.exp(-1.5 * dt)
-    look.yaw -= look.yaw * back
-    look.height -= look.height * back
-  }
-
-  // Arabanın kendi ekseninde kamera noktası: açıya göre çember üzerinde (sin → yan, cos → arka).
-  // Boost sırasında biraz geri çekil (intensity 0 → 1 yumuşak geçtiği için geri dönüş de yumuşak)
-  const distance = look.distance + 5 * boost.intensity
-  desiredPosition.set(Math.sin(look.yaw) * distance, CAMERA_HEIGHT + look.height, -Math.cos(look.yaw) * distance)
-  // Arkadan bakarken arabanın önüne, yandan bakarken arabanın kendisine bak
-  lookTarget.set(0, 1.6, 12 * Math.cos(look.yaw))
-
-  // localToWorld: arabaya göre verilen noktayı dünya koordinatına çevirir (araba dönünce o da döner)
-  // car.frame: arabanın konumu + pist yönü, takla dahil değil → araba dönerken ekran dönmez
-  car.frame.localToWorld(desiredPosition)
-  car.frame.localToWorld(lookTarget)
-
-  if (car.state.falling || car.state.crashed) {
-    // Düşerken / çarpınca kamera yerinde kalır, sadece arabaya bakar
-    lookTarget.copy(car.model.position)
-    // Çarpmanın ilk yarım saniyesinde sarsıntı: bakılan noktayı rastgele titret
-    const shake = car.state.crashed ? Math.max(0, 0.5 - car.state.crashTime) * 1.6 : 0
-    lookTarget.x += (Math.random() - 0.5) * shake
-    lookTarget.y += (Math.random() - 0.5) * shake
-    camera.lookAt(lookTarget)
-  } else {
-    if (car.state.respawned) {
-      camera.position.copy(desiredPosition) // yeniden doğunca hemen arkasına geç (aşağıdan uçarak gelmesin)
-      car.state.respawned = false
-    }
-    // lerp ile hedefe yavaşça yaklaş → kamera sarsılmadan, yumuşak takip eder
-    camera.position.lerp(desiredPosition, 1 - Math.exp(-10 * dt))
-    // Boost başlangıcında kısa sarsıntı: bakılan noktayı titret (kamera konumu bozulmaz)
-    if (boost.shake > 0) {
-      lookTarget.x += (Math.random() - 0.5) * 1.2 * boost.shake
-      lookTarget.y += (Math.random() - 0.5) * 1.2 * boost.shake
-    }
-    camera.lookAt(lookTarget)
-  }
-
-  // Hız hissi: hızlandıkça görüş açısı (FOV) 62 → 72 genişler, boost'ta 90'a kadar
-  const targetFov = 62 + 10 * Math.min(1, car.speedRatio()) + 18 * boost.intensity
-  camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-4 * dt))
-  camera.updateProjectionMatrix()
-}
 
 // --- 9. Post-processing: seçici bloom + kenar yumuşatma (postfx.js) ---
 // Gökyüzü ve su bloom geçişinde gizlenir → güneşe bakınca ekran artık beyaza boğulmaz
@@ -370,21 +321,28 @@ renderer.setAnimationLoop((time) => {
   lastFrameTime = time
   timer.update(time)
   // 0 → ilk karede negatif çıkabiliyor, 0.05 → sekme değişince dev bir sıçrama olmasın
-  const delta = THREE.MathUtils.clamp(timer.getDelta(), 0, 0.05)
+  simulate(THREE.MathUtils.clamp(timer.getDelta(), 0, 0.05))
+  updateSunLight()
+  postfx.render() // renderer.render yerine: efektlerle birlikte çiz
+})
+
+// Bir karelik oyun güncellemesi (çizim hariç). realDelta: gerçek geçen süre (saniye)
+function simulate(realDelta) {
+  // Zaman ölçeği TEK NOKTADAN: oyundaki her hareket bu delta'yı kullanır → ağır çekimde dünya
+  // aynı oranda yavaşlar, hiçbir sistemin "ağır çekim var mı?" diye bilmesi gerekmez
+  const delta = realDelta * fall.timeScale
 
   water.material.uniforms.time.value += delta // dalgaları ilerlet
-  skyUniforms.time.value = time // bulutları kaydır
+  skyUniforms.time.value += delta * 1000 // bulutları kaydır (ms)
 
   car.update(delta)
   tricks.update(delta) // car.update'ten sonra: inişi yakalar, sonraki karenin takla dönüşünü hazırlar
   boost.update(delta) // durum makinesi + sonraki kare için hız çarpanı + alev / hız çizgisi / HUD
   smoke.update(delta) // bu karede üretilen tüm pufları da ilerlet
   items?.update(delta) // ?. → items henüz yoksa (geri sayım) atla
+  fall.update(realDelta, delta) // düşüş süresi gerçek zamanla, dönüş ve duman oyun zamanıyla
   txHud.setProgress(car.progress())
 
   if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı
-  else updateChaseCamera(delta)
-
-  updateSunLight()
-  postfx.render() // renderer.render yerine: efektlerle birlikte çiz
-})
+  else cameraModes.update(realDelta) // kamera gerçek zamanla: ağır çekimde de akıcı
+}

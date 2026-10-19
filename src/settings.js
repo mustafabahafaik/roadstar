@@ -17,5 +17,10 @@ const PRESETS = {
   },
 }
 
-const requested = new URLSearchParams(window.location.search).get('kalite')
+const params = new URLSearchParams(window.location.search)
+const requested = params.get('kalite')
+
+// Hata ayıklama görselleri (düşme sınırı çizgileri, araba merkezi). true yap ya da adrese ?debug ekle
+const DEBUG_DEFAULT = false
+export const DEBUG = DEBUG_DEFAULT || params.has('debug')
 export const quality = PRESETS[requested] ?? PRESETS.dusuk // ?? → soldaki yoksa sağdakini kullan

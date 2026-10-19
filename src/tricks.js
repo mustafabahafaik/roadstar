@@ -160,7 +160,8 @@ export function createTricks(car, smoke, events = {}) {
       // Yerde (ya da düşerken / çarpınca): taklayı bırak, araba yavaşça düzleşsin.
       // slerp: iki dönüş arasında küresel yumuşak geçiş; her karede kalan farkın bir kısmı kapanır
       spin.flip = spin.roll = 0
-      s.trickQuat.slerp(identity, 1 - Math.exp(-SETTLE_SPEED * dt))
+      // Düşerken dönüşü fall.js yönetir: düzleştirme
+      if (!s.falling) s.trickQuat.slerp(identity, 1 - Math.exp(-SETTLE_SPEED * dt))
       if (s.falling || s.crashed) spun.flip = spun.roll = 0
     }
     wasAirborne = airborne

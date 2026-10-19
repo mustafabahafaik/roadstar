@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { neon } from './neon.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
-import { trackCurve } from './track.js'
+import { trackCurve, TRACK_WIDTH } from './track.js'
 import { createTruck } from './truck.js'
 
 // Her engel bir veri satırı. İleride arabayla çarpışmayı da bu listeden kontrol edeceğiz.
@@ -26,7 +26,7 @@ export const obstacles = [
   { u: 0.895, type: 'tower', offset: 0.5, width: 8, height: 7 },
 ]
 
-const ROAD_HALF_WIDTH = 8 // track.js'teki ROAD_WIDTH / 2
+const ROAD_HALF_WIDTH = TRACK_WIDTH / 2
 export const TOWER_TOP_RATIO = 0.6 // kulenin tepesi tabanının bu oranı kadar geniş (car.js çarpışmada da kullanır)
 
 // Malzemeler bir kez oluşturulup tüm engellerde paylaşılır (GPU için daha ucuz)

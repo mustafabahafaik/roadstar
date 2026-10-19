@@ -66,7 +66,8 @@ export function createTxHud(getChain) {
     if (!race) return
     const s = chain.stats()
     summary.innerHTML = `
-      <h2>YARIŞ BİTTİ</h2>
+      <h2>${race.reason === 'fall' ? 'ELENDİN' : 'YARIŞ BİTTİ'}</h2>
+      ${race.reason === 'fall' ? '<p class="tx-sub">Kalkansız düştün: tur tamamlanmadı</p>' : ''}
       <p class="tx-sub">Süre <b>${formatTime(race.time)}</b> · Toplanan <b>${race.collected}/${race.total}</b> · Altın <b>${race.gold}</b> · Takla skoru <b>${race.score ?? 0}</b></p>
       <div class="tx-metric">
         <span>Ortalama onay süresi</span>
