@@ -8,6 +8,8 @@ import { quality } from './settings.js'
 import { createTrack } from './track.js'
 import { createObstacles } from './obstacles.js'
 import { createCar } from './car.js'
+import { createSmoke } from './smoke.js'
+import { createTricks } from './tricks.js'
 import { createItems, TOKEN_TYPES, TOKEN_COUNT } from './items.js'
 import { createChain, parseRaceStarted } from './chain.js'
 import { hexlify, randomBytes } from 'ethers'
@@ -140,8 +142,11 @@ function holdMessage(text) {
   hudMessage.classList.add('hold')
 }
 
+// Ortak duman havuzu (smoke.js): alt itici, yan iticiler, takla pufları, patlama
+const smoke = createSmoke(scene, renderer)
+
 // Araba: W/S gaz-fren, A/D sağ-sol, Space zıpla (basılı tut → roketle süzül) (car.js)
-const car = createCar(scene, {
+const car = createCar(scene, smoke, {
   onCrash: () => showMessage('ÇARPTIN!'),
   onFall: () => showMessage('DÜŞTÜN!'),
   onShieldBlock: () => showMessage('KALKAN!'),
@@ -154,8 +159,15 @@ const car = createCar(scene, {
       collected: collected.length,
       total: TOKEN_COUNT,
       gold: collected.filter((c) => c.type === 4).length,
+      score: tricks.score,
     })
   },
+})
+
+// Havada takla (tricks.js): W/S öne-arkaya, Q/E barrel roll; temiz inişte skor + boost
+const tricks = createTricks(car, smoke, {
+  onTrick: (text) => showMessage(text),
+  onBadLanding: (text) => showMessage(text),
 })
 
 // Zincir (chain.js): burner cüzdan + kendi nonce takibimizle işlem gönderme.
@@ -287,8 +299,9 @@ function updateChaseCamera(dt) {
   lookTarget.set(0, 1.6, 12 * Math.cos(look.yaw))
 
   // localToWorld: arabaya göre verilen noktayı dünya koordinatına çevirir (araba dönünce o da döner)
-  car.model.localToWorld(desiredPosition)
-  car.model.localToWorld(lookTarget)
+  // car.frame: arabanın konumu + pist yönü, takla dahil değil → araba dönerken ekran dönmez
+  car.frame.localToWorld(desiredPosition)
+  car.frame.localToWorld(lookTarget)
 
   if (car.state.falling || car.state.crashed) {
     // Düşerken / çarpınca kamera yerinde kalır, sadece arabaya bakar
@@ -350,6 +363,8 @@ renderer.setAnimationLoop((time) => {
   skyUniforms.time.value = time // bulutları kaydır
 
   car.update(delta)
+  tricks.update(delta) // car.update'ten sonra: inişi yakalar, sonraki karenin takla dönüşünü hazırlar
+  smoke.update(delta) // bu karede üretilen tüm pufları da ilerlet
   items?.update(delta) // ?. → items henüz yoksa (geri sayım) atla
   txHud.setProgress(car.progress())
 

@@ -66,9 +66,9 @@ export function createPostFX(renderer, scene, camera, hiddenInBloom, msaaSamples
     if (obj.isMesh && !obj.material.userData?.bloom) { // ?. → malzeme dizisi olabilir
       saved.set(obj, obj.material)
       obj.material = black // önündeki neonları yine örtsün diye silmiyoruz, siyaha boyuyoruz
-    } else if (obj.isSprite) {
+    } else if (obj.isSprite || obj.isPoints) {
       saved.set(obj, null)
-      obj.visible = false // duman parlamasın
+      obj.visible = false // duman (smoke.js → Points) parlamasın
     }
   }
 

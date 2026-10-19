@@ -50,10 +50,12 @@ export const obstacleBoxes = obstacles.map((o) => {
   return { u: o.u, center, halfDepth: TRUCK_SIZE.length / 2, halfWidth: TRUCK_SIZE.width / 2, top: TRUCK_SIZE.height }
 })
 
-// events: { onCrash, onFall } → main.js ekrana yazı çıkarmak için kullanır
-export function createCar(scene, events = {}) {
+// smoke: ortak duman havuzu (smoke.js). events: { onCrash, onFall, ... } → main.js ekrana yazı çıkarır
+export function createCar(scene, smoke, events = {}) {
   const model = createCarModel()
-  const thrusters = createThrusters(model, scene)
+  const thrusters = createThrusters(model, scene, smoke)
+  // Kamera çerçevesi: arabanın konumu + pist yönü (takla ve yatma YOK) → araba dönerken ekran dönmesin
+  const frame = new THREE.Object3D()
 
   // Arabanın durumu: konumu bu sayılardan hesaplıyoruz
   const state = {
@@ -75,6 +77,8 @@ export function createCar(scene, events = {}) {
     raceTime: 0, // yarış süresi (saniye): ilk harekette başlar
     finished: false, // bir tur tamamlandı mı
     locked: true, // geri sayım bitene kadar sürülemez (main.js açar)
+    trickQuat: new THREE.Quaternion(), // havadaki takla dönüşü (tricks.js yönetir), pist yönüne göre
+    wobble: 0, // kötü inişte sarsılma süresi (saniye)
   }
   let thrustPower = 0 // roketlerin gücü (0 → 1), görsel efektler için
   let roll = 0 // yana yatma açısı (radyan)
@@ -128,11 +132,15 @@ export function createCar(scene, events = {}) {
 
   function updateDriving(dt) {
     const controls = state.finished || state.locked ? FINISHED_INPUT : input
-    // 1) Hız: gaz, fren, sürtünme. Block Rush (boost) en yüksek hızı ve ivmeyi artırır
+    // 1) Hız: gaz, fren, sürtünme. Block Rush (boost) en yüksek hızı ve ivmeyi artırır.
+    // Havadayken W/S takla tuşudur (tricks.js): hız korunur, gaz/fren işlemez
     const maxSpeed = MAX_SPEED * state.boost
-    if (controls.forward) state.speed += ACCELERATION * state.boost * dt
-    else if (controls.brake) state.speed -= BRAKE * dt
-    else state.speed -= DRAG * dt
+    const airborne = state.height > 0 && !state.falling
+    if (!airborne) {
+      if (controls.forward) state.speed += ACCELERATION * state.boost * dt
+      else if (controls.brake) state.speed -= BRAKE * dt
+      else state.speed -= DRAG * dt
+    }
     // Sınırın üstündeyse (Rush yeni bittiyse) birden değil yavaşça normale in
     if (state.speed > maxSpeed) state.speed = Math.max(maxSpeed, state.speed - BOOST_SLOWDOWN * dt)
     state.speed = Math.max(0, state.speed)
@@ -224,6 +232,9 @@ export function createCar(scene, events = {}) {
       .addScaledVector(side, state.offset)
       .addScaledVector(up, state.height)
     model.lookAt(model.position.clone().add(tangent)) // burnu gidiş yönüne
+    frame.position.copy(model.position)
+    frame.quaternion.copy(model.quaternion)
+    frame.updateMatrixWorld() // kamera bu çerçeveyi kullanır (localToWorld için güncel olmalı)
 
     // Yatma ve yunuslama: sağa kayarken sağa yatar, yükselirken burnu kalkar.
     // rotateZ/rotateX arabanın kendi eksenlerinde döndürür (lookAt'tan sonra çağrılmalı)
@@ -237,6 +248,15 @@ export function createCar(scene, events = {}) {
     if (state.falling) model.rotateX(Math.min(state.fallTime * 1.4, 1.3))
     // Çarpınca kendi etrafında savrulsun (giderek yavaşlayan dönüş)
     if (state.crashed) model.rotateY(crashSpinSide * 2.2 * (1 - Math.exp(-3 * state.crashTime)))
+
+    // Takla: tricks.js'in quaternion'ı. Sağdan çarpmak = arabanın KENDİ (yerel) eksenlerinde döndürmek
+    model.quaternion.multiply(state.trickQuat)
+
+    // Kötü iniş sarsıntısı: hızlı, giderek sönen yalpalama
+    if (state.wobble > 0) {
+      state.wobble = Math.max(0, state.wobble - dt)
+      model.rotateZ(Math.sin(state.wobble * 45) * 0.2 * state.wobble)
+    }
 
     // Yeniden doğduktan sonra yanıp sön (saniyede ~8 kez görünür/görünmez)
     model.visible = state.blink <= 0 || Math.floor(state.blink * 16) % 2 === 0
@@ -274,6 +294,8 @@ export function createCar(scene, events = {}) {
     roll = 0
     pitch = 0
     thrustPower = 0
+    state.trickQuat.identity() // takla sıfırlansın: yeniden doğan araba düz dursun
+    state.wobble = 0
   }
 
   // 0 → 1: kamera efektleri için hızın maksimuma oranı
@@ -281,5 +303,5 @@ export function createCar(scene, events = {}) {
   // 0 → 1: turun ne kadarı tamamlandı
   const progress = () => THREE.MathUtils.clamp(state.distance / trackLength, 0, 1)
 
-  return { model, state, update, speedRatio, progress }
+  return { model, frame, state, velocity, update, speedRatio, progress }
 }

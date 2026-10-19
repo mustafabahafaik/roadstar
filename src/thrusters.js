@@ -1,26 +1,8 @@
 import * as THREE from 'three'
 import { WHEEL_POSITIONS } from './carModel.js'
 
-const SMOKE_COUNT = 500 // havuzdaki duman parçacığı sayısı
 const SMOKE_LIFE = 1.4 // bir parçacığın ömrü (saniye)
 const SPAWN_RATE = 320 // saniyede doğan toplam parçacık (tam güçte) → sık doğunca birleşip sütun gibi görünür
-
-// Yumuşak kenarlı yuvarlak duman dokusu: canvas'a radyal gradyan çizip doku yapıyoruz
-function createSmokeTexture() {
-  const size = 64
-  const canvas = document.createElement('canvas')
-  canvas.width = canvas.height = size
-  const ctx = canvas.getContext('2d')
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-  g.addColorStop(0, 'rgba(255,255,255,1)')
-  g.addColorStop(0.4, 'rgba(235,240,255,0.55)')
-  g.addColorStop(1, 'rgba(220,230,255,0)')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, size, size)
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  return texture
-}
 
 // Alev: aşağı bakan, içi boş koni. AdditiveBlending → rengi arkasındakine ekler, ışık gibi parlar
 function createFlame() {
@@ -54,7 +36,8 @@ function createFlame() {
   return flame
 }
 
-export function createThrusters(carModel, scene) {
+// smoke: smoke.js'teki ortak duman havuzu (alt itici dumanı da oradan çıkar)
+export function createThrusters(carModel, scene, smoke) {
   // Alevler arabanın parçası: araba ile birlikte hareket eder
   const flames = WHEEL_POSITIONS.map((p) => {
     const flame = createFlame()
@@ -64,36 +47,20 @@ export function createThrusters(carModel, scene) {
     return flame
   })
 
-  // Duman dünyada kalır (arabayla taşınmaz) → doğrudan sahneye ekleniyor
-  const smokeTexture = createSmokeTexture()
-  const particles = []
-  for (let i = 0; i < SMOKE_COUNT; i++) {
-    const sprite = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: smokeTexture, color: 0xdde3ec, transparent: true, depthWrite: false, opacity: 0 }),
-    )
-    sprite.visible = false
-    scene.add(sprite)
-    // velocity: roketten çıkış hızı (havada yavaşlar), carry: arabadan miras alınan hız
-    particles.push({ sprite, velocity: new THREE.Vector3(), carry: new THREE.Vector3(), age: SMOKE_LIFE })
-  }
-
-  let nextParticle = 0
   let spawnAccumulator = 0 // kesirli parçacıkları biriktir (ör. 0.4 + 0.7 = 1 parçacık)
   const worldPos = new THREE.Vector3()
   const down = new THREE.Vector3()
   const carry = new THREE.Vector3()
   const lateral = new THREE.Vector3()
 
+  const velocity = new THREE.Vector3()
+
+  // Alt itici pufu: aşağı doğru fırlar, arabanın hızının bir kısmını miras alır (sütun gibi altında kalır)
   function spawn(position) {
-    const p = particles[nextParticle]
-    nextParticle = (nextParticle + 1) % SMOKE_COUNT // halka gibi: en eski parçacığı yeniden kullan
-    p.age = 0
-    p.sprite.visible = true
-    p.sprite.position.copy(position)
-    p.velocity.copy(down).multiplyScalar(14 + Math.random() * 6)
-    p.velocity.x += (Math.random() - 0.5) * 1.5
-    p.velocity.z += (Math.random() - 0.5) * 1.5
-    p.carry.copy(carry)
+    velocity.copy(down).multiplyScalar(14 + Math.random() * 6)
+    velocity.x += (Math.random() - 0.5) * 1.5
+    velocity.z += (Math.random() - 0.5) * 1.5
+    smoke.emit({ position, velocity, carry, life: SMOKE_LIFE, startSize: 0.7, endSize: 6.2, opacity: 0.38 })
   }
 
   // power: 0 = kapalı, 1 = tam güç
@@ -120,15 +87,10 @@ export function createThrusters(carModel, scene) {
     flash.position.y += 1.5
     flashAge = 0
     for (let i = 0; i < count; i++) {
-      const p = particles[nextParticle]
-      nextParticle = (nextParticle + 1) % SMOKE_COUNT
-      p.age = 0
-      p.sprite.visible = true
-      p.sprite.position.copy(flash.position)
       // Rastgele yön (yukarı ağırlıklı) × rastgele hız
-      p.velocity.set(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize()
-      p.velocity.multiplyScalar(6 + Math.random() * 10)
-      p.carry.set(0, 0, 0)
+      velocity.set(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize()
+      velocity.multiplyScalar(6 + Math.random() * 10)
+      smoke.emit({ position: flash.position, velocity, life: SMOKE_LIFE, startSize: 1.2, endSize: 7, opacity: 0.38 })
     }
   }
 
@@ -166,23 +128,6 @@ export function createThrusters(carModel, scene) {
         carModel.localToWorld(worldPos)
         spawn(worldPos)
       }
-    }
-
-    // Var olan dumanı yaşlandır: yavaşla, büyü, saydamlaş
-    for (const p of particles) {
-      if (p.age >= SMOKE_LIFE) continue
-      p.age += dt
-      const t = p.age / SMOKE_LIFE // 0 → 1
-      if (t >= 1) {
-        p.sprite.visible = false
-        continue
-      }
-      p.velocity.multiplyScalar(1 - 2.2 * dt) // hava direnci
-      p.velocity.y += 1.5 * dt // sıcak duman hafifçe yükselir
-      p.carry.multiplyScalar(1 - 0.35 * dt) // miras hız yavaşça söner → sütunun ucu geride kalır
-      p.sprite.position.addScaledVector(p.velocity, dt).addScaledVector(p.carry, dt)
-      p.sprite.scale.setScalar(0.7 + t * 5.5) // önce ince, aşağı indikçe genişleyen sütun
-      p.sprite.material.opacity = 0.38 * (1 - t) * Math.min(1, t * 10)
     }
   }
 

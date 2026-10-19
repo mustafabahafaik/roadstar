@@ -14,4 +14,7 @@ export const input = {
   get left() { return pressed.has('KeyA') || pressed.has('ArrowLeft') },
   get right() { return pressed.has('KeyD') || pressed.has('ArrowRight') },
   get jump() { return pressed.has('Space') },
+  // Havada takla (tricks.js): Q / E kendi uzun ekseni etrafında yuvarlanma (barrel roll)
+  get rollLeft() { return pressed.has('KeyQ') },
+  get rollRight() { return pressed.has('KeyE') },
 }
