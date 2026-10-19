@@ -132,19 +132,62 @@ contract RaceTest is Test {
     // Hazır yardımcılar: _waitUntilAllReachable(), _findIndex(tür), race.collect, race.useSkill
     // =====================================================================
 
-    // Test 3: transfer revert eder
-    // İpucu: _waitUntilAllReachable(); alice bir token toplasın (race.collect).
-    // Sonra alice olarak items.safeTransferFrom(alice, bob, id, 1, "") çağır.
-    // Hata parametresizse: vm.expectRevert(RaceItems.NonTransferable.selector)
-    // function test_transfer_reverts() public { }
+    // Test 3: transfer revert eder (birlikte kurduk)
+    // Hazırla: alice bir token toplasın → Yap: bob'a göndermeyi dene → Doğrula: hata + bakiyeler aynı
+    function test_transfer_reverts() public {
+        _waitUntilAllReachable(); // tokenlar toplanabilir olsun
+
+        vm.prank(alice); // yarışın sahibi alice: çağrıyı o yapmalı
+        race.collect(raceId, 0);
+        uint256 id = items.tokenId(raceId, race.itemAt(seed, 0));
+
+        // Sıra: önce çağıran (prank), sonra beklenen hata, en son asıl çağrı
+        vm.prank(alice);
+        vm.expectRevert(RaceItems.NonTransferable.selector);
+        items.safeTransferFrom(alice, bob, id, 1, "");
+
+        assertEq(items.balanceOf(alice, id), 1, "alice'in tokeni yerinde kalmali");
+        assertEq(items.balanceOf(bob, id), 0, "bob'a token gecmemeli");
+    }
 
     // Test 4: useSkill token'ı yakar, olmayan token için revert eder
-    // İpucu: uint256 i = _findIndex(2); → bir Mıknatıs. Topla → race.useSkill(raceId, 2) → bakiye 0 olmalı.
-    // Tekrar useSkill → NoItem(raceId, 2) hatası bekle (uint8(2) olarak ver).
-    // function test_useSkill_burns_and_revertsWhenEmpty() public { }
+    // Hazırla: alice bir Mıknatıs toplasın → Yap 1: kullan → Doğrula: yakıldı → Yap 2: tekrar kullan → hata
+    function test_useSkill_burns_and_revertsWhenEmpty() public {
+        uint8 magnet = 2;
+        _waitUntilAllReachable();
+        vm.startPrank(alice); // stopPrank'e kadar tüm çağrılar alice'ten
+
+        race.collect(raceId, _findIndex(magnet));
+        uint256 id = items.tokenId(raceId, magnet);
+        assertEq(items.balanceOf(alice, id), 1, "miknatis toplanmis olmali");
+
+        // Yap 1: kullan → token yakılmalı (bakiye 1 → 0)
+        race.useSkill(raceId, magnet);
+        assertEq(items.balanceOf(alice, id), 0, "useSkill tokeni yakmali");
+
+        // Yap 2: elinde kalmadı → NoItem(raceId, 2). Tür uint8 olmalı: hata tanımı (uint256, uint8)
+        vm.expectRevert(abi.encodeWithSelector(Race.NoItem.selector, raceId, magnet));
+        race.useSkill(raceId, magnet);
+
+        vm.stopPrank();
+    }
 
     // Test 5: altın token useSkill ile kullanılamaz
-    // İpucu: _findIndex(4) ile altını bul ve topla, sonra race.useSkill(raceId, 4) → GoldNotUsable bekle.
-    // Bonus: hatadan sonra altın bakiyesinin hâlâ 1 olduğunu kontrol et.
-    // function test_useSkill_gold_reverts() public { }
+    // Hazırla: alice bir Altın toplasın → Yap: kullanmayı dene → Doğrula: GoldNotUsable + altın yerinde
+    function test_useSkill_gold_reverts() public {
+        uint8 gold = 4;
+        _waitUntilAllReachable();
+        vm.startPrank(alice);
+
+        race.collect(raceId, _findIndex(gold));
+        uint256 id = items.tokenId(raceId, gold);
+
+        vm.expectRevert(Race.GoldNotUsable.selector); // parametresiz hata: sadece selector
+        race.useSkill(raceId, gold);
+
+        // Bonus: hata işlemi tamamen geri aldığı için altın hâlâ alice'te
+        assertEq(items.balanceOf(alice, id), 1, "altin yakilmamali");
+
+        vm.stopPrank();
+    }
 }
