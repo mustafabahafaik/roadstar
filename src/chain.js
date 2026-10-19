@@ -1,14 +1,20 @@
-import { JsonRpcProvider, Wallet, Interface, keccak256, formatEther } from 'ethers'
+import { JsonRpcProvider, Wallet, Interface, keccak256, formatEther, parseEther } from 'ethers'
 
 // --- Ağ ve kontrat ---
 export const MONAD_TESTNET = {
   chainId: 10143,
-  rpcUrl: 'https://testnet-rpc.monad.xyz',
+  // VITE_RPC_URL: sadece yerel deneme için (anvil --chain-id 10143). Normalde Monad testnet
+  rpcUrl: import.meta.env.VITE_RPC_URL || 'https://testnet-rpc.monad.xyz',
   explorer: 'https://testnet.monadexplorer.com',
   faucet: 'https://faucet.monad.xyz',
 }
 // contracts/ içinde deploy edince çıkan Race adresi. Boşken oyun zincirsiz çalışır
 export const RACE_ADDRESS = '0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434'
+// RacePool (giriş ücreti havuzu) adresi. Boşken ücretli oda kapalı. server/.env'deki POOL_ADDRESS ile AYNI olmalı
+export const POOL_ADDRESS = import.meta.env.VITE_POOL_ADDRESS || '' // deploy edince adresi '' içine yapıştır
+export const ENTRY_FEE = parseEther('1') // odayı kuranın seçtiği giriş ücreti: 1 MON (10^18 wei)
+
+export const explorerTx = (hash) => `${MONAD_TESTNET.explorer}/tx/${hash}`
 
 // Race kontratının sadece kullandığımız fonksiyonları ve olayı (insan okunur ABI)
 const raceAbi = new Interface([
@@ -19,6 +25,24 @@ const raceAbi = new Interface([
   'event RaceStarted(uint256 indexed raceId, address indexed player, bytes32 seed)',
 ])
 
+// RacePool: oda, ücret, imzalı sıralama, ödül çekme
+const poolAbi = new Interface([
+  'function createRoom(uint256 entryFee, uint8 maxPlayers) returns (uint256 roomId)',
+  'function joinRoom(uint256 roomId) payable',
+  'function settle(uint256 roomId, address[] ranking, bytes signature)',
+  'function withdraw()',
+  'function getRoom(uint256 roomId) view returns (uint256 entryFee, uint8 maxPlayers, uint64 createdAt, uint64 startedAt, bool settled, address[] players)',
+  'function claimable(address account) view returns (uint256)',
+  'event RoomCreated(uint256 indexed roomId, address indexed creator, uint256 entryFee, uint8 maxPlayers)',
+])
+
+// Her işlem hangi kontrata gider
+const CONTRACTS = {
+  race: { address: RACE_ADDRESS, abi: raceAbi },
+  pool: { address: POOL_ADDRESS, abi: poolAbi },
+}
+const POOL_METHODS = new Set(['createRoom', 'joinRoom', 'settle', 'withdraw'])
+
 // startRace makbuzundaki RaceStarted olayından yarış numarasını ve tohumu oku
 export function parseRaceStarted(receipt) {
   for (const log of receipt.logs) {
@@ -28,10 +52,30 @@ export function parseRaceStarted(receipt) {
   throw new Error('RaceStarted olayı bulunamadı')
 }
 
+// createRoom makbuzundaki RoomCreated olayından zincir oda numarası
+export function parseRoomCreated(receipt) {
+  for (const log of receipt.logs) {
+    const parsed = poolAbi.parseLog({ topics: log.topics, data: log.data })
+    if (parsed?.name === 'RoomCreated') return parsed.args.roomId
+  }
+  throw new Error('RoomCreated olayı bulunamadı')
+}
+
 // Gaz limitleri: ölçülen değer + taban ücret (21k) + pay. Monad ücreti limit üzerinden keser → dar tut.
 // estimateGas kullanmıyoruz: hem fazladan RPC (gecikme) hem de iyimser akışta yanlış sonuç verir
 // (ör. collect henüz işlenmeden useSkill tahmini "token yok" der)
-const GAS_LIMITS = { startRace: 150000n, collect: 140000n, useSkill: 95000n, finishRace: 80000n }
+// RacePool limitleri: en kötü durum ölçümü (5 kişilik oda, ilk kez yazılan alacaklar) + 21k + ~%30 pay.
+// settle: 137.8k yürütme + 21k taban + ~7k veri (5 adres + imza) ≈ 166k
+const GAS_LIMITS = {
+  startRace: 150000n,
+  collect: 140000n,
+  useSkill: 95000n,
+  finishRace: 80000n,
+  createRoom: 140000n,
+  joinRoom: 150000n,
+  settle: 220000n,
+  withdraw: 75000n,
+}
 const RECEIPT_POLL_MS = 150 // onayı kaç ms'de bir soralım (ölçüm hassasiyeti)
 const FEE_REFRESH_MS = 20000 // gas fiyatını ne sıklıkla güncelleyelim
 const BALANCE_REFRESH_MS = 8000
@@ -66,6 +110,7 @@ const shortError = (err) => {
 // onChange: işlem listesi / bakiye değişince çağrılır (HUD'u güncellemek için)
 export function createChain(onChange = () => {}) {
   const enabled = RACE_ADDRESS !== ''
+  const poolEnabled = POOL_ADDRESS !== ''
   // staticNetwork: ağı her seferinde sormasın (chainId sabit) → daha az RPC çağrısı
   const provider = new JsonRpcProvider(MONAD_TESTNET.rpcUrl, MONAD_TESTNET.chainId, { staticNetwork: true })
   const wallet = loadBurnerWallet()
@@ -136,14 +181,16 @@ export function createChain(onChange = () => {}) {
   }
 
   // İşlem gönder. Beklemez: hemen döner, sonuç onChange ile HUD'a yansır (iyimser arayüz).
-  // Sonucu bekleyen olursa (ör. startRace'in tohumu) tx.confirmation sözünü (Promise) await edebilir
-  function send(method, args, label) {
+  // Sonucu bekleyen olursa (ör. startRace'in tohumu) tx.confirmation sözünü (Promise) await edebilir.
+  // value: işlemle birlikte gönderilen para (wei, BigInt) — joinRoom'un giriş ücreti
+  function send(method, args, label, { value = 0n } = {}) {
     const tx = { id: txs.length, label, status: 'pending', hash: null, ms: null, error: null }
     tx.confirmation = new Promise((resolve, reject) => Object.assign(tx, { resolve, reject }))
     tx.confirmation.catch(() => {}) // bekleyen yoksa "yakalanmamış hata" uyarısı çıkmasın
     txs.push(tx)
     onChange()
-    if (!enabled) {
+    const target = CONTRACTS[POOL_METHODS.has(method) ? 'pool' : 'race']
+    if (!target.address) {
       tx.status = 'skipped'
       tx.error = 'kontrat adresi yok'
       settle(tx)
@@ -154,7 +201,7 @@ export function createChain(onChange = () => {}) {
     ready
       .then(async () => {
         const gasLimit = GAS_LIMITS[method]
-        const worstCaseCost = gasLimit * fees.maxFeePerGas
+        const worstCaseCost = gasLimit * fees.maxFeePerGas + value // gaz + yatırılan para
         // Bakiye yetmiyorsa hiç gönderme: gönderip reddedilirse nonce sırasında boşluk kalır
         if (balance - reserved < worstCaseCost) {
           tx.status = 'skipped'
@@ -169,8 +216,9 @@ export function createChain(onChange = () => {}) {
         const signed = await wallet.signTransaction({
           type: 2, // EIP-1559 işlem
           chainId: MONAD_TESTNET.chainId,
-          to: RACE_ADDRESS,
-          data: raceAbi.encodeFunctionData(method, args),
+          to: target.address,
+          data: target.abi.encodeFunctionData(method, args),
+          value,
           nonce,
           gasLimit,
           maxFeePerGas: fees.maxFeePerGas,
@@ -221,12 +269,23 @@ export function createChain(onChange = () => {}) {
     }
   }
 
+  // Havuzdan okuma (işlem değil, ücretsiz): getRoom, claimable
+  async function readPool(method, args) {
+    const data = poolAbi.encodeFunctionData(method, args)
+    const result = await provider.call({ to: POOL_ADDRESS, data })
+    return poolAbi.decodeFunctionResult(method, result)
+  }
+
   return {
     enabled,
+    poolEnabled,
     address: wallet.address,
     txs,
     send,
     stats,
+    readPool,
+    // Sunucuya "bu adres benim" kanıtı: metni burner anahtarıyla imzala (işlem değil, zincire gitmez)
+    signMessage: (text) => wallet.signMessage(text),
     get balance() {
       return balance === null ? null : Number(formatEther(balance))
     },

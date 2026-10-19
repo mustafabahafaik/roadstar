@@ -71,7 +71,12 @@ export function createNet() {
     },
     // Sunucunun şu anki saati (ms). Başlangıç anı ve yarış süresi bu saatle hesaplanır
     serverNow: () => Date.now() + offset,
-    join: (name, room) => socket.timeout(4000).emitWithAck('join', { name, room }),
+    // wallet: { address, proof } — cüzdan sahipliği kanıtı (ücretli oda için şart, ücretsizde isteğe bağlı)
+    join: (name, room, wallet = {}) => socket.timeout(4000).emitWithAck('join', { name, room, ...wallet }),
+    // Ücretli oda: "ödemek istiyorum" → { roomId } (var olan zincir odası) ya da { create: true, maxPlayers }
+    claimChainRoom: (maxPlayers) => socket.timeout(5000).emitWithAck('claimChainRoom', { maxPlayers }),
+    // "joinRoom yaptım": sunucu zincirden doğrular (birkaç kez deneyebilir, süre uzun)
+    chainJoined: (roomId) => socket.timeout(15000).emitWithAck('chainJoined', { roomId }),
     setReady: (ready) => socket.emit('ready', ready),
     // volatile: bağlantı o an meşgulse bu paketi at, 66 ms sonra yenisi zaten gelecek
     sendState: (state) => socket.volatile.emit('state', state),

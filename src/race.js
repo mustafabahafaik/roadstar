@@ -1,10 +1,10 @@
 import * as THREE from 'three'
-import { hexlify, randomBytes } from 'ethers'
+import { hexlify, randomBytes, formatEther } from 'ethers'
 import { trackCurve, TRACK_WIDTH, RACE_LENGTH } from './track.js'
 import { buildCourse } from './course.js'
 import { createObstacles } from './obstacles.js'
 import { createRamps } from './ramps.js'
-import { parseRaceStarted } from './chain.js'
+import { parseRaceStarted, explorerTx } from './chain.js'
 import { GAME_STATE } from './gameState.js'
 import { TOKEN_COUNT } from './items.js'
 import { neon } from './neon.js'
@@ -106,6 +106,9 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
   let multiplayer = false
   let room = null // sunucunun son gönderdiği oda bilgisi (isimler, renkler, durumlar, bitiş süreleri)
   let finalStandings = null // sunucunun yarış sonu sıralaması ('results')
+  let paidRace = false // bu yarış ücretli bir zincir odasında mı başladı
+  let settlement = null // sunucunun imzaladığı ödeme sıralaması: { pool, roomId, entryFee, ranking, signature }
+  const claim = { busy: false, done: false, error: null, txs: [] } // "Ödülü Çek" akışı
   let startAt = 0 // yarışın başlama anı (SUNUCU saatiyle, ms). Herkes için aynı sayı
   let elapsedMs = 0 // geçen süre (bitince donar)
   let finishReason = null
@@ -162,6 +165,7 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
   // --- Lobi (lobby.js) ---
   const lobby = createLobby({
     net,
+    chain,
     onSolo: () =>
       beginCountdown({
         // ?seed=123 verilirse hep aynı parkur (deneme için), yoksa rastgele 32 bayt
@@ -179,8 +183,9 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
   })
   net.on('start', ({ seed, startAt: at }) => beginCountdown({ seed, startAt: at, multiplayer: true }))
   net.on('snapshot', (snapshot) => remote.onSnapshot(snapshot))
-  net.on('results', ({ standings }) => {
+  net.on('results', ({ standings, settlement: signed }) => {
     finalStandings = standings
+    settlement = signed
     if (finishReason) renderResults()
   })
   net.on('disconnect', () => {
@@ -194,6 +199,7 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
     multiplayer = mp
     startAt = at
     standingsHud.hidden = !multiplayer
+    paidRace = multiplayer && Boolean(room?.chain)
 
     // Parkuru seed'den kur ve sahneye ekle (engeller + rampalar)
     const course = buildCourse(seed)
@@ -285,6 +291,79 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
     standingsHud.innerHTML = `<div class="race-standings-head"><b>SIRALAMA</b><span>${ping}</span></div><ol>${rows}</ol>`
   }
 
+  // --- Ödül: pot = ücret × oyuncu; 1. %80, 2. %15 (kontrattaki hesabın aynısı, BigInt ile) ---
+  const mon = (wei) => `${Number(formatEther(wei))} MON`
+  function prizes() {
+    if (!settlement) return new Map()
+    const pot = BigInt(settlement.entryFee) * BigInt(settlement.ranking.length)
+    const shares = [(pot * 80n) / 100n, (pot * 15n) / 100n]
+    return new Map(settlement.ranking.map((address, i) => [address, shares[i] ?? 0n]))
+  }
+
+  // "Ödülü Çek": oda zincirde sonuçlanmadıysa önce settle (imzalı sıralama), sonra withdraw (pull)
+  async function claimPrize() {
+    if (claim.busy || claim.done || !settlement) return
+    claim.busy = true
+    claim.error = null
+    renderResults()
+    const { roomId, ranking, signature } = settlement
+    try {
+      const [, , , , settled] = await chain.readPool('getRoom', [roomId])
+      if (!settled) {
+        const tx = chain.send('settle', [roomId, ranking, signature], `settle #${roomId}`)
+        claim.txs.push({ label: 'settle', tx })
+        await tx.confirmation.catch(async (err) => {
+          // Aynı anda başka bir kazanan settle etmiş olabilir (bizimki AlreadySettled ile döner): sorun yok
+          const [, , , , nowSettled] = await chain.readPool('getRoom', [roomId])
+          if (!nowSettled) throw err
+        })
+      }
+      const [amount] = await chain.readPool('claimable', [chain.address])
+      if (amount === 0n) throw new Error('çekilecek alacak yok (zaten çekilmiş olabilir)')
+      const tx = chain.send('withdraw', [], `withdraw ${mon(amount)}`)
+      claim.txs.push({ label: 'withdraw', tx })
+      await tx.confirmation
+      claim.done = true
+    } catch (err) {
+      claim.error = err.message
+    }
+    claim.busy = false
+    renderResults()
+  }
+
+  function prizeHtml(list) {
+    if (!paidRace) return ''
+    if (!settlement) {
+      return finalStandings
+        ? '<div class="race-prize"><p class="bad">Sunucu sıralamayı imzalayamadı: ödül şimdilik çekilemiyor</p></div>'
+        : '<div class="race-prize"><span>Ödül havuzu: sonuç bekleniyor…</span></div>'
+    }
+    const myPrize = prizes().get(chain.address) ?? 0n
+    const pot = BigInt(settlement.entryFee) * BigInt(settlement.ranking.length)
+    const links = claim.txs
+      .map(({ label, tx }) => {
+        const state = tx.status === 'confirmed' ? '✓' : tx.status === 'pending' ? '…' : escapeHtml(tx.error ?? tx.status)
+        const short = tx.hash ? `${tx.hash.slice(0, 8)}…${tx.hash.slice(-4)}` : '—'
+        const link = tx.hash ? `<a href="${explorerTx(tx.hash)}" target="_blank" rel="noopener">${short} ↗</a>` : short
+        return `<li>${label} ${link} <span>${state}</span></li>`
+      })
+      .join('')
+    const button =
+      myPrize > 0n
+        ? `<button class="race-start race-claim" ${claim.busy || claim.done ? 'disabled' : ''}>${
+            claim.done ? 'ÇEKİLDİ ✓' : claim.busy ? 'İŞLEM SÜRÜYOR…' : 'ÖDÜLÜ ÇEK'
+          }</button>`
+        : ''
+    return `
+      <div class="race-prize">
+        <span>Ödül havuzu ${mon(pot)} · zincir odası #${settlement.roomId}</span>
+        <strong>${myPrize > 0n ? `+${mon(myPrize)}` : 'Bu yarışta ödül yok'}</strong>
+        ${button}
+        ${links ? `<ul class="race-claim-txs">${links}</ul>` : ''}
+        ${claim.error ? `<p class="bad">${escapeHtml(claim.error)}</p>` : ''}
+      </div>`
+  }
+
   function renderResults() {
     const finished = finishReason === 'lap'
     const s = chain.stats()
@@ -292,13 +371,17 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
     const list = standings()
     const me = list.find((p) => p.self)
     const place = list.indexOf(me) + 1
+    const payout = prizes()
     const rows = list
-      .map(
-        (p, i) => `
+      .map((p, i) => {
+        const prize = payout.get(p.address) ?? 0n
+        return `
         <li class="${p.self ? 'me' : ''}" style="--c:${toCssColor(p.color)}">
-          <span>${i + 1}.</span><b>${escapeHtml(p.name)}${p.left ? ' <small>(koptu)</small>' : ''}</b><span>${resultText(p)}</span>
-        </li>`,
-      )
+          <span>${i + 1}.</span><b>${escapeHtml(p.name)}${p.left ? ' <small>(koptu)</small>' : ''}</b><span>${resultText(p)}${
+            prize > 0n ? ` <em class="race-win">+${mon(prize)}</em>` : ''
+          }</span>
+        </li>`
+      })
       .join('')
     const waiting = multiplayer && !finalStandings ? '<p class="tx-sub">Diğer oyuncular bekleniyor…</p>' : ''
     results.innerHTML = `
@@ -311,6 +394,7 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
       </div>
       <ol class="race-ranking">${rows}</ol>
       ${waiting}
+      ${prizeHtml(list)}
       <p class="tx-sub">Toplanan <b>${collected.length}/${TOKEN_COUNT}</b> · Altın <b>${collected.filter((c) => c.type === 4).length}</b> · Takla skoru <b>${getScore()}</b></p>
       <div class="tx-grid">
         <div><b>${s.sent}</b>gönderilen işlem</div>
@@ -319,6 +403,8 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
         <div><b>${s.pending}</b>bekleyen</div>
       </div>
       <button class="tx-again">${multiplayer ? 'Lobiye dön' : 'Yeni yarış'}</button>`
+    const claimButton = results.querySelector('.race-claim')
+    if (claimButton) claimButton.onclick = claimPrize
     results.querySelector('.tx-again').onclick = () => {
       const url = new URL(window.location.href)
       url.searchParams.delete('seed') // sabit seed verildiyse kaldır: yeni yarış = yeni parkur (oda kalır)

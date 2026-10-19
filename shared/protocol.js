@@ -17,6 +17,10 @@ export const MAX_TRACK_SPEED = 140 // birim / saniye
 // Oyuncu renkleri: odaya giriş sırasına göre (lobi listesi, araba boyası, isim etiketi)
 export const PLAYER_COLORS = [0x00f0ff, 0xff3bd6, 0xffd23f, 0x7dff6b, 0xff7a3d]
 
+// Oyuncunun "bu cüzdan adresi benim" kanıtı için imzaladığı metin (oyun imzalar, sunucu doğrular).
+// socket.id her bağlantıda farklı → eski bir kanıt başka bir bağlantıda tekrar kullanılamaz
+export const ownershipMessage = (socketId) => `Monad Racer: bu adres benim (${socketId})`
+
 // Sıralama (sunucu da oyun da aynı kuralı kullanır):
 // önce bitirenler (süreye göre), sonra yarışanlar ve en son DNF (ikisi de ilerlemeye göre)
 const ORDER = { finished: 0, racing: 1, dnf: 2 }

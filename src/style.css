@@ -624,3 +624,52 @@ canvas {
 }
 .race-standings b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .race-standings li.me, .race-ranking li.me { background: rgba(155, 107, 255, 0.25); }
+
+/* --- Ücretli oda (lobby.js) ve ödül (race.js) --- */
+.lobby-pay {
+  margin: 10px 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 210, 63, 0.08);
+  border: 1px solid rgba(255, 210, 63, 0.4);
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.lobby-size { font-size: 13px; opacity: 0.9; }
+.lobby-size select {
+  margin-left: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(8, 10, 22, 0.8);
+  color: #fff;
+  font: 600 13px system-ui, sans-serif;
+}
+.lobby-pay .race-start { margin-top: 0; background: #e0a800; box-shadow: 0 0 20px rgba(255, 210, 63, 0.45); }
+.lobby-paid {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(255, 210, 63, 0.2);
+  color: #ffd23f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.race-prize {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 210, 63, 0.1);
+  border: 1px solid rgba(255, 210, 63, 0.45);
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+}
+.race-prize span { opacity: 0.8; }
+.race-prize strong { font-size: 30px; color: #ffd23f; font-variant-numeric: tabular-nums; }
+.race-prize .race-start { margin-top: 4px; background: #e0a800; }
+.race-prize .bad { margin: 0; color: #ff8a95; }
+.race-claim-txs { margin: 0; padding: 0; list-style: none; font-size: 12px; display: grid; gap: 2px; }
+.race-claim-txs a { color: #29e7ff; text-decoration: none; }
+.race-win { font-style: normal; color: #ffd23f; font-weight: 800; }
