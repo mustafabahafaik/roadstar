@@ -6,19 +6,17 @@ import { Water } from 'three/addons/objects/Water.js'
 import { createPostFX } from './postfx.js'
 import { quality } from './settings.js'
 import { createTrack } from './track.js'
-import { createObstacles } from './obstacles.js'
-import { createRamps } from './ramps.js'
 import { createCar } from './car.js'
 import { createSmoke } from './smoke.js'
 import { createTricks } from './tricks.js'
 import { createBoost } from './boost.js'
-import { createGameState, GAME_STATE } from './gameState.js'
+import { createGameState } from './gameState.js'
 import { createCameraModes } from './cameraModes.js'
 import { createFall } from './fall.js'
-import { createItems, TOKEN_TYPES, TOKEN_COUNT } from './items.js'
-import { createChain, parseRaceStarted } from './chain.js'
-import { hexlify, randomBytes } from 'ethers'
+import { createItems, TOKEN_TYPES } from './items.js'
+import { createChain } from './chain.js'
 import { createTxHud } from './txHud.js'
+import { createRace } from './race.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -126,13 +124,7 @@ scene.fog = new THREE.FogExp2(0xc4d6e4, 0.0006)
 const track = createTrack()
 scene.add(track)
 
-// Engeller: atlanacak duvarlar ve sağa-sola kaçılacak bloklar (obstacles.js)
-const obstacleGroup = createObstacles()
-scene.add(obstacleGroup)
-
-// Rampalar (ramps.js): üstünden hızla geçince araba kendiliğinden havalanır
-const rampGroup = createRamps()
-scene.add(rampGroup)
+// Engeller ve rampalar artık burada değil: seed gelince race.js kurar (course.js)
 
 // Ekran yazısı (HUD: oyunun üstüne bindirilen bilgi). Stili style.css'te
 const hudMessage = document.createElement('div')
@@ -154,7 +146,7 @@ function holdMessage(text) {
 // Ortak duman havuzu (smoke.js): alt itici, yan iticiler, takla pufları, patlama
 const smoke = createSmoke(scene, renderer)
 
-// Oyun durumu (gameState.js): countdown → racing ⇄ falling → finished
+// Oyun durumu (gameState.js): lobby → countdown → racing ⇄ falling → finished / dnf
 const gameState = createGameState()
 
 // Araba: W/S gaz-fren, A/D sağ-sol, Space zıpla (basılı tut → roketle süzül) (car.js)
@@ -162,23 +154,8 @@ const car = createCar(scene, smoke, {
   onCrash: () => showMessage('ÇARPTIN!'),
   onFall: () => fall.start(), // altında yol kalmadı: düşüş sahnesi (fall.js)
   onShieldBlock: () => showMessage('KALKAN!'),
-  // reason: 'lap' (tur bitti) | 'fall' (kalkansız düştü → zincire finishRace gitmez, yarış yarım kaldı)
-  onFinish: (reason) => {
-    gameState.set(GAME_STATE.FINISHED)
-    if (reason === 'lap') {
-      showMessage('BİTİŞ!')
-      if (race.onChain) chain.send('finishRace', [race.id], `finishRace #${race.id}`)
-    }
-    const collected = items?.collected ?? []
-    txHud.showSummary({
-      time: car.state.raceTime,
-      collected: collected.length,
-      total: TOKEN_COUNT,
-      gold: collected.filter((c) => c.type === 4).length,
-      score: tricks.score,
-      reason,
-    })
-  },
+  // reason: 'lap' (bitiş kapısı) | 'dnf' (kalkansız düştü → zincire finishRace gitmez). race.js sonucu gösterir
+  onFinish: (reason) => race.finish(reason),
 })
 
 // Boost (boost.js): bar dolunca Shift → 3 sn 2x hız. Durum: hazır → aktif → bekliyor
@@ -199,56 +176,34 @@ let txHud = null
 const chain = createChain(() => txHud?.refresh())
 txHud = createTxHud(() => chain)
 
-// Yarış: numarayı ve tokenların tohumunu zincir verir (Race.startRace). Oyuncu tohumu seçemez,
-// önceden bilemez → "altını bol yarış" aranamaz. Zincir yoksa / cevap gelmezse zincirsiz yarış
-const race = { id: null, seed: null, onChain: false }
-let items = null // tohum gelince oluşturulur
-const START_TIMEOUT_MS = 15000
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-
-async function startRace() {
-  // Geri sayım sürerken startRace zincire gider (Monad'da ~0.5 sn: çoğu zaman geri sayım bitmeden döner)
-  const startTx = chain.enabled ? chain.send('startRace', [], 'startRace') : null
-  for (const n of ['3', '2', '1']) {
-    holdMessage(n)
-    await sleep(700)
-  }
-
-  if (startTx) {
-    if (startTx.status === 'pending') holdMessage('ZİNCİR BEKLENİYOR…')
-    try {
-      const timeout = sleep(START_TIMEOUT_MS).then(() => Promise.reject(new Error('zaman aşımı')))
-      const receipt = await Promise.race([startTx.confirmation, timeout]) // hangisi önce biterse
-      const { raceId, seed } = parseRaceStarted(receipt)
-      Object.assign(race, { id: raceId, seed, onChain: true })
-    } catch (err) {
-      console.warn('startRace olmadı, zincirsiz yarış:', err.message)
-    }
-  }
-  if (!race.onChain) {
-    // Zincirsiz: ?seed=123 verilirse hep aynı yerleşim (deneme için), yoksa rastgele 32 bayt
-    race.seed = new URLSearchParams(window.location.search).get('seed') ?? hexlify(randomBytes(32))
-  }
-
-  // İyimser arayüz: etki oyunda hemen uygulanır (items.js), işlem arkada gider, oyun beklemez
-  const label = race.onChain ? `Yarış #${race.id}` : 'Zincirsiz yarış'
-  items = createItems(scene, car, race.seed, label, {
-    onCollect: (index, type) => {
-      if (type === 3) boost.fill() // Block Rush toplandı: boost barı anında dolu
-      if (race.onChain) chain.send('collect', [race.id, index], `collect #${index} ${TOKEN_TYPES[type].name}`)
-    },
-    startBoost: () => boost.startBoost({ free: true, source: 'rush' }), // Block Rush skill'i (tuş 3)
-    onSkill: (type) => race.onChain && chain.send('useSkill', [race.id, type], `useSkill ${TOKEN_TYPES[type].name}`),
-  })
-  car.state.locked = false
-  gameState.set(GAME_STATE.RACING)
-  showMessage(race.onChain ? 'BAŞLA!' : 'BAŞLA! (zincirsiz)')
-}
-startRace()
+// Yarış akışı (race.js): lobi → geri sayım (zincirden seed) → yarış → bitiş / DNF + sonuç ekranı.
+// Seed gelince parkuru race.js kurar, tokenları burada oluşturuyoruz (boost ve zincirle konuşuyorlar)
+let items = null
+const race = createRace({
+  scene,
+  car,
+  chain,
+  gameState,
+  getScore: () => tricks.score,
+  showMessage,
+  holdMessage,
+  // info: { id, seed, onChain }. İyimser arayüz: etki oyunda hemen uygulanır, işlem arkada gider
+  onCourse: (seed, label, info) => {
+    items = createItems(scene, car, seed, label, {
+      onCollect: (index, type) => {
+        if (type === 3) boost.fill() // Block Rush toplandı: boost barı anında dolu
+        if (info.onChain) chain.send('collect', [info.id, index], `collect #${index} ${TOKEN_TYPES[type].name}`)
+      },
+      startBoost: () => boost.startBoost({ free: true, source: 'rush' }), // Block Rush skill'i (tuş 3)
+      onSkill: (type) => info.onChain && chain.send('useSkill', [info.id, type], `useSkill ${TOKEN_TYPES[type].name}`),
+    })
+    return items
+  },
+})
 scene.add(car.model)
 
 // Hangi nesne gölge düşürür (castShadow), hangisi üstüne gölge alır (receiveShadow)
-for (const group of [track, obstacleGroup, rampGroup, car.model]) {
+for (const group of [track, car.model]) {
   group.traverse((obj) => {
     // ?. → malzeme dizisi ([boya, cam, ...]) ise userData yoktur, hata vermeden undefined döner
     if (!obj.isMesh || obj.material.userData?.bloom) return // neonlar ve alevler gölge düşürmez
@@ -346,7 +301,7 @@ function simulate(realDelta) {
   smoke.update(delta) // bu karede üretilen tüm pufları da ilerlet
   items?.update(delta) // ?. → items henüz yoksa (geri sayım) atla
   fall.update(realDelta, delta) // düşüş süresi gerçek zamanla, dönüş ve duman oyun zamanıyla
-  txHud.setProgress(car.progress())
+  race.update(realDelta) // süre gerçek zamanla + ilerleme çubuğu + oyuncu durumu nesnesi
 
   if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı
   else cameraModes.update(realDelta) // kamera gerçek zamanla: ağır çekimde de akıcı

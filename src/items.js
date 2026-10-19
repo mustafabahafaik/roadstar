@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { trackCurve, trackDistance } from './track.js'
-import { obstacleBoxes } from './car.js'
+import { course } from './course.js'
 import { rampSurface } from './ramps.js'
 import { neon } from './neon.js'
 import { itemHash, itemTypeFromHash, hashFraction } from './random.js'
@@ -46,7 +46,7 @@ export function planTokens(seed) {
     const type = itemTypeFromHash(hash) // zincirdeki Race.itemAt(seed, index) ile aynı
 
     // Bir engelin üstüne/içine denk geliyorsa engelin tepesinin üstüne kaldır (uçana ödül)
-    for (const b of obstacleBoxes) {
+    for (const b of course.obstacleBoxes) {
       const halfDepth = b.halfDepth ?? b.bottomHalf
       const halfWidth = b.halfWidth ?? b.bottomHalf
       const nearAlong = Math.abs(trackDistance(u, b.u)) < halfDepth + 4

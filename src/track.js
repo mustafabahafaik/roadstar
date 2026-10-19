@@ -1,24 +1,36 @@
 import * as THREE from 'three'
 import { neon } from './neon.js'
 
-// Pistin geçeceği kontrol noktaları (x, y, z).
-// y = yükseklik: hepsi suyun (y = 0) epey üstünde, inip çıkan bir rota
-const TRACK_SCALE = 2 // pisti yatayda büyütür (uzunluk ~1950): engeller arası daha uzun olur
-const points = [
-  new THREE.Vector3(150, 40, 0),
-  new THREE.Vector3(100, 60, 110),
-  new THREE.Vector3(0, 75, 150),
-  new THREE.Vector3(-110, 55, 100),
-  new THREE.Vector3(-160, 35, 0),
-  new THREE.Vector3(-90, 50, -120),
-  new THREE.Vector3(0, 70, -90),
-  new THREE.Vector3(90, 45, -140),
-].map((p) => new THREE.Vector3(p.x * TRACK_SCALE, p.y, p.z * TRACK_SCALE)) // yükseklik (y) aynı kalır
+// Yarışın uzunluğu: pistin bir turu tam bu kadar (birim ≈ metre). Başlangıç ve bitiş aynı nokta (u = 0)
+export const RACE_LENGTH = 3000
 
-// CatmullRomCurve3: noktaların hepsinden yumuşakça geçen eğri.
-// İkinci parametre true → son nokta ilk noktaya bağlanır, pist kapalı tur olur
-export const trackCurve = new THREE.CatmullRomCurve3(points, true)
-export const trackLength = trackCurve.getLength() // pistin toplam uzunluğu (birim)
+// Pistin şekli: kontrol noktaları (x, y, z). y = yükseklik: hepsi suyun (y = 0) epey üstünde
+const BASE_POINTS = [
+  [150, 40, 0],
+  [100, 60, 110],
+  [0, 75, 150],
+  [-110, 55, 100],
+  [-160, 35, 0],
+  [-90, 50, -120],
+  [0, 70, -90],
+  [90, 45, -140],
+]
+
+// CatmullRomCurve3: noktaların hepsinden yumuşakça geçen eğri. true → kapalı tur.
+// scale: yatay büyütme (yükseklik aynı kalır)
+function buildCurve(scale) {
+  const points = BASE_POINTS.map(([x, y, z]) => new THREE.Vector3(x * scale, y, z * scale))
+  return new THREE.CatmullRomCurve3(points, true)
+}
+
+// Uzunluğu tam RACE_LENGTH yapan ölçeği bul. Yükseklikler ölçeklenmediği için uzunluk ölçekle tam
+// orantılı değil → ölç, oranla düzelt, birkaç kez tekrarla (her adımda hata küçülür)
+let trackScale = 2
+for (let i = 0; i < 4; i++) trackScale *= RACE_LENGTH / buildCurve(trackScale).getLength()
+
+export const trackCurve = buildCurve(trackScale)
+trackCurve.arcLengthDivisions = 2000 // uzunluk tablosunu daha ince örnekle: getPointAt daha hassas
+export const trackLength = trackCurve.getLength() // ≈ RACE_LENGTH
 
 // İki u değeri arasındaki en kısa uzaklık (birim, işaretli). Turun başı/sonu dahil: 0.99 → 0.01 = +0.02 tur
 export function trackDistance(fromU, toU) {
@@ -27,7 +39,7 @@ export function trackDistance(fromU, toU) {
 
 // Pist genişliği: TEK kaynak. Yol geometrisi, düşme kontrolü (car.js), engeller (obstacles.js) bunu kullanır
 export const TRACK_WIDTH = 16
-const SEGMENTS = 600 // eğri boyunca kaç noktada örnek alacağız (pist uzadıkça artmalı)
+const SEGMENTS = 900 // eğri boyunca kaç noktada örnek alacağız (pist uzadıkça artmalı)
 
 // Eğri boyunca yolun sol ve sağ kenar noktalarını hesaplar
 function computeEdges() {

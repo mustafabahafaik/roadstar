@@ -131,10 +131,10 @@ export function createFall({ car, smoke, scene, gameState, cameraModes, getItems
     active = false
     vignette.classList.remove('show')
     cameraModes.setMode('chase')
-    if (raceOver) gameState.set(GAME_STATE.FINISHED)
+    if (raceOver) gameState.set(GAME_STATE.DNF) // kalkan yoktu: bitiremedi
     else gameState.set(GAME_STATE.RACING)
     if (respawn) car.respawnAfterFall() // pistin ortası, biraz geride; 1.5 sn yanıp sönerek dokunulmaz
-    if (raceOver) car.endRace('fall')
+    if (raceOver) car.endRace('dnf')
   }
 
   // Kesik kesik duman: tekerlek iticilerinden kısa bir püskürme

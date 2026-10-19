@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import { trackCurve, trackLength, trackDistance, TRACK_WIDTH } from './track.js'
-import { obstacles, TOWER_TOP_RATIO } from './obstacles.js'
-import { TRUCK_SIZE } from './truck.js'
+import { course } from './course.js'
 import { input } from './input.js'
 
 // Yarış bitince kullanılan "kontroller": gaz yok, fren basılı → araba yavaşça durur
@@ -39,18 +38,6 @@ export const CAR_HALF_WIDTH = 2.0
 
 const up = new THREE.Vector3(0, 1, 0)
 
-// Engellerin pist koordinatlarındaki kutuları: pist boyunca yarım derinlik, yandaki merkez ve
-// yarım genişlik, yükseklik. AABB (eksenlere hizalı kutu): her eksende ayrı ayrı üst üste binme kontrolü
-export const obstacleBoxes = obstacles.map((o) => {
-  const center = o.offset * ROAD_HALF
-  if (o.type === 'wall') return { u: o.u, center, halfDepth: 1, halfWidth: o.width / 2, top: o.height }
-  if (o.type === 'tower') {
-    // Kule yukarı doğru incelir: kutunun boyutu yüksekliğe göre hesaplanır (bkz. boxSizeAt)
-    const bottomHalf = o.width / 2
-    return { u: o.u, center, bottomHalf, topHalf: bottomHalf * TOWER_TOP_RATIO, top: o.height + 0.4 }
-  }
-  return { u: o.u, center, halfDepth: TRUCK_SIZE.length / 2, halfWidth: TRUCK_SIZE.width / 2, top: TRUCK_SIZE.height }
-})
 
 // smoke: ortak duman havuzu (smoke.js). events: { onCrash, onFall, ... } → main.js ekrana yazı çıkarır
 export function createCar(scene, smoke, events = {}) {
@@ -78,8 +65,7 @@ export function createCar(scene, smoke, events = {}) {
     boost: 1, // en yüksek hız çarpanı (boost.js yazar: 1 → 2 yumuşak geçiş)
     boostThrust: false, // boost aktif mi (boost.js): aktifken gaza basılmasa da hedef hıza yaklaşır
     distance: 0, // başlangıçtan beri net ilerleme (birim). Geri sekme ve yeniden doğma düşülür
-    raceTime: 0, // yarış süresi (saniye): ilk harekette başlar
-    finished: false, // bir tur tamamlandı mı
+    finished: false, // yarış bitti mi (bitiş kapısı ya da DNF)
     locked: true, // geri sayım bitene kadar sürülemez (main.js açar)
     trickQuat: new THREE.Quaternion(), // havadaki takla dönüşü (tricks.js yönetir), pist yönüne göre
     wobble: 0, // kötü inişte sarsılma süresi (saniye)
@@ -103,7 +89,7 @@ export function createCar(scene, smoke, events = {}) {
 
   // Araba kutusu herhangi bir engel kutusuyla üç eksende de üst üste biniyor mu?
   function hitsObstacle() {
-    return obstacleBoxes.some((b) => {
+    return course.obstacleBoxes.some((b) => { // course.js: seed'den üretilmiş engeller
       if (state.height >= b.top) return false // arabanın altı engelin tepesinden yukarıda: üstünden geçiyor
       const half = halfSizeAt(b, state.height)
       return (
@@ -231,8 +217,7 @@ export function createCar(scene, smoke, events = {}) {
   }
 
   function update(dt) {
-    // Yarış süresi ilk harekette başlar, bir tur tamamlanınca durur
-    if (!state.finished && (state.speed > 0 || state.raceTime > 0)) state.raceTime += dt
+    // Pistin sonuna (bitiş kapısı, u = 0) varınca yarış biter. Süreyi race.js ölçer (ms, gerçek saat)
     if (!state.finished && state.distance >= trackLength) endRace('lap')
 
     if (state.crashed) updateCrash(dt)
@@ -288,8 +273,8 @@ export function createCar(scene, smoke, events = {}) {
   function respawn(backDistance) {
     let u = state.u - backDistance / trackLength
     // Doğma noktası bir engelin dibine denk gelmesin: yakın engel varsa onun da gerisine al
-    for (let tries = 0; tries < obstacles.length; tries++) {
-      const blocking = obstacles.find((o) => Math.abs(trackDistance(u, o.u)) < OBSTACLE_CLEARANCE)
+    for (let tries = 0; tries < course.obstacles.length; tries++) {
+      const blocking = course.obstacles.find((o) => Math.abs(trackDistance(u, o.u)) < OBSTACLE_CLEARANCE)
       if (!blocking) break
       u = blocking.u - (OBSTACLE_CLEARANCE * 1.5) / trackLength
     }
@@ -314,7 +299,7 @@ export function createCar(scene, smoke, events = {}) {
     state.wobble = 0
   }
 
-  // Yarışı bitir. reason: 'lap' (tur tamamlandı) | 'fall' (kalkansız düştü)
+  // Yarışı bitir. reason: 'lap' (bitiş kapısından geçti) | 'dnf' (kalkansız düştü)
   function endRace(reason) {
     if (state.finished) return
     state.finished = true
@@ -323,7 +308,7 @@ export function createCar(scene, smoke, events = {}) {
 
   // 0 → 1: kamera efektleri için hızın maksimuma oranı
   const speedRatio = () => state.speed / MAX_SPEED
-  // 0 → 1: turun ne kadarı tamamlandı
+  // 0 → 1: pistin ne kadarı tamamlandı (race.js: ilerleme çubuğu ve sıralama)
   const progress = () => THREE.MathUtils.clamp(state.distance / trackLength, 0, 1)
 
   return {

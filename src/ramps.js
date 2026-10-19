@@ -1,9 +1,9 @@
 import * as THREE from 'three'
 import { trackCurve, trackLength, trackDistance } from './track.js'
+import { course, RAMP_LENGTH } from './course.js'
 import { neon } from './neon.js'
 
 // --- Ayarlar ---
-const RAMP_LENGTH = 16 // rampanın pist boyunca uzunluğu (birim)
 const RAMP_HEIGHT = 2.6 // dudaktaki (en uç) yükseklik
 const SEGMENTS = 24 // eğrinin kaç parçayla çizileceği
 
@@ -13,18 +13,13 @@ const SEGMENTS = 24 // eğrinin kaç parçayla çizileceği
 const heightAt = (t) => RAMP_HEIGHT * t * t
 const slopeAt = (t) => (2 * RAMP_HEIGHT * t) / RAMP_LENGTH
 
+// Rampa listesi course.js'te seed'den üretilir: { lipU, startU, offset, width }
 // lipU: dudağın (rampanın bittiği uç) pistteki yeri, offset: yanal merkez (birim), width: genişlik
-// Engellerin u'ları: 0.07 + k·0.075 (obstacles.js). Dudak, duvarlardan 30 birim önce → üstünden uçarsın
-export const ramps = [
-  { lipU: 0.37 - 30 / trackLength, offset: 0, width: 12 }, // 0.37'deki duvarın önünde
-  { lipU: 0.4825, offset: -4, width: 7 }, // sol şeritte serbest takla rampası (sağdaki kuleden uzak)
-  { lipU: 0.82 - 30 / trackLength, offset: 0, width: 12 }, // 0.82'deki duvarın önünde
-].map((r) => ({ ...r, startU: r.lipU - RAMP_LENGTH / trackLength }))
 
 // Pistte (u, offset) noktasındaki rampa yüzeyi: { height, slope }. Rampa yoksa { 0, 0 }
 const flat = { height: 0, slope: 0 }
 export function rampSurface(u, offset) {
-  for (const r of ramps) {
+  for (const r of course.ramps) {
     const along = trackDistance(r.startU, u) // rampanın başından bu yana kaç birim (işaretli)
     if (along < 0 || along > RAMP_LENGTH) continue
     if (Math.abs(offset - r.offset) > r.width / 2) continue
@@ -103,7 +98,8 @@ function strip(rows, keyA, keyB, withUv) {
   return geometry
 }
 
-export function createRamps() {
+// list: course.ramps (seed'den üretilmiş rampalar)
+export function createRamps(list) {
   const group = new THREE.Group()
   const chevrons = createChevronTexture()
   const top = new THREE.MeshStandardMaterial({
@@ -118,7 +114,7 @@ export function createRamps() {
   const edgeNeon = neon(0x00f0ff, 2)
   const lipNeon = neon(0xff3bd6, 3)
 
-  for (const r of ramps) {
+  for (const r of list) {
     const rows = rampPoints(r)
     group.add(new THREE.Mesh(strip(rows, 'leftTop', 'rightTop', true), top)) // üst yüzey (yukarı bakar)
     group.add(new THREE.Mesh(strip(rows, 'leftBottom', 'leftTop'), body)) // sol yan duvar

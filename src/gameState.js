@@ -1,27 +1,31 @@
 // Oyunun durum makinesi: oyun aynı anda yalnızca BİR durumdadır, geçişler kurallıdır.
 //
-//   countdown ──BAŞLA──▶ racing ──kenardan düştü──▶ falling ──2 sn──▶ racing
-//                          │                           └──kalkan yok──▶ finished
-//                          └──tur bitti──▶ finished
+//   lobby ──Başlat──▶ countdown ──3-2-1──▶ racing ──kenardan düştü──▶ falling ──2 sn──▶ racing
+//                                            │                          └──kalkan yok──▶ dnf
+//                                            └──bitiş kapısı──▶ finished
 //
 // Dağınık bayraklar (isFalling, isFinished...) yerine tek bir durum: "aynı anda hem düşüyor hem
 // bitmiş" gibi imkânsız karışımlar oluşamaz. Durum değişince dinleyicilere haber verilir.
 export const GAME_STATE = {
+  LOBBY: 'lobby', // yarış başlamadı: oyuncular hazırlanıyor (çok oyunculuda burada buluşulacak)
   COUNTDOWN: 'countdown',
   RACING: 'racing',
   FALLING: 'falling',
-  FINISHED: 'finished',
+  FINISHED: 'finished', // bitiş kapısından geçti
+  DNF: 'dnf', // Did Not Finish: kalkanı yokken düştü, yarışı bitiremedi
 }
 
 // İzin verilen geçişler: buradaki listede olmayan bir geçiş denenirse yok sayılır
 const TRANSITIONS = {
+  lobby: ['countdown'],
   countdown: ['racing'],
-  racing: ['falling', 'finished'],
-  falling: ['racing', 'finished'],
+  racing: ['falling', 'finished', 'dnf'],
+  falling: ['racing', 'dnf'],
   finished: [],
+  dnf: [],
 }
 
-export function createGameState(initial = GAME_STATE.COUNTDOWN) {
+export function createGameState(initial = GAME_STATE.LOBBY) {
   let current = initial
   const listeners = []
 

@@ -3,31 +3,15 @@ import { neon } from './neon.js'
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { trackCurve, TRACK_WIDTH } from './track.js'
 import { createTruck } from './truck.js'
+import { TOWER_TOP_RATIO } from './course.js'
 
-// Her engel bir veri satırı. İleride arabayla çarpışmayı da bu listeden kontrol edeceğiz.
-// u      → turun neresinde (0 = başlangıç, 0.5 = yarısı, 1 = tur sonu)
+// Engel listesi artık course.js'te seed'den üretilir. Her engel bir veri satırı:
+// u      → turun neresinde (0 = başlangıç/bitiş, 0.5 = yarısı)
 // type   → 'wall' (tam duvar, atla) | 'tower' (yarım blok: kaç ya da Space basılı uç) | 'truck' (tır, kaç ya da atla)
 // offset → yolda yan konum (-1 = sol kenar, 0 = orta, 1 = sağ kenar)
-// width / height → wall ve tower için boyut (tırın boyutu truck.js'te sabit)
-// color  → tır rengi: 'white' | 'blue'
-// Aralık 0.075 ≈ 145 birim ≈ tam hızda 2 saniye: bir engeli aşıp yere inmeye vakit kalır
-export const obstacles = [
-  { u: 0.07, type: 'wall', offset: 0, width: 16, height: 4 },
-  { u: 0.145, type: 'tower', offset: -0.5, width: 8, height: 7 },
-  { u: 0.22, type: 'tower', offset: 0.5, width: 8, height: 7 },
-  { u: 0.295, type: 'truck', offset: 0.5, color: 'white' },
-  { u: 0.37, type: 'wall', offset: 0, width: 16, height: 5 },
-  { u: 0.445, type: 'truck', offset: -0.5, color: 'blue' },
-  { u: 0.52, type: 'tower', offset: 0.5, width: 8, height: 7 },
-  { u: 0.595, type: 'wall', offset: 0, width: 16, height: 4 },
-  { u: 0.67, type: 'tower', offset: -0.5, width: 8, height: 7 },
-  { u: 0.745, type: 'truck', offset: 0.5, color: 'white' },
-  { u: 0.82, type: 'wall', offset: 0, width: 16, height: 6 },
-  { u: 0.895, type: 'tower', offset: 0.5, width: 8, height: 7 },
-]
+// width / height → wall ve tower için boyut (tırın boyutu truck.js'te sabit), color → tır rengi
 
 const ROAD_HALF_WIDTH = TRACK_WIDTH / 2
-export const TOWER_TOP_RATIO = 0.6 // kulenin tepesi tabanının bu oranı kadar geniş (car.js çarpışmada da kullanır)
 
 // Malzemeler bir kez oluşturulup tüm engellerde paylaşılır (GPU için daha ucuz)
 // MeshStandardMaterial ışığa tepki verir: metalness = metalik görünüm, roughness = pürüzlülük
@@ -92,11 +76,12 @@ function createTower(width, height) {
   return group
 }
 
-export function createObstacles() {
+// list: course.obstacles (seed'den üretilmiş engeller)
+export function createObstacles(list) {
   const group = new THREE.Group()
   const up = new THREE.Vector3(0, 1, 0)
 
-  for (const o of obstacles) {
+  for (const o of list) {
     const center = trackCurve.getPointAt(o.u)
     const tangent = trackCurve.getTangentAt(o.u)
     const side = new THREE.Vector3().crossVectors(tangent, up).normalize()
