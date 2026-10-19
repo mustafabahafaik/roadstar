@@ -1,7 +1,11 @@
 // Şu an basılı tutulan tuşlar. e.code klavye düzeninden bağımsızdır (Türkçe Q klavyede de 'KeyA')
 const pressed = new Set()
 
+// Lobide takma ad yazarken tuşlar oyunu sürmesin (W, boşluk, C, Shift...)
+export const isTyping = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement
+
 window.addEventListener('keydown', (e) => {
+  if (isTyping(e)) return
   pressed.add(e.code)
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault() // sayfa kaymasın
 })

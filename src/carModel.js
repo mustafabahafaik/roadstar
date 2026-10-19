@@ -18,7 +18,7 @@ export const WHEEL_POSITIONS = [
 ]
 
 // --- Malzemeler ---
-const paint = new THREE.MeshPhysicalMaterial({
+const basePaint = new THREE.MeshPhysicalMaterial({
   color: 0xf2f4f6,
   metalness: 0.1,
   roughness: 0.3,
@@ -135,7 +135,7 @@ function createWheel(outerSign) {
 }
 
 // --- Arka kanat: kuğu boynu taşıyıcılar + karbon kanat + açılı beyaz yan plakalar ---
-function createWing(car) {
+function createWing(car, paint) {
   const wingZ = -4.2
   const wingY = 3.05
 
@@ -177,8 +177,11 @@ function createWing(car) {
   }
 }
 
-export function createCarModel() {
+// color: boya rengi (rakip arabalar için). Verilmezse beyaz; boya malzemesinin kopyası boyanır
+export function createCarModel(color) {
   const car = new THREE.Group()
+  const paint = color === undefined ? basePaint : basePaint.clone()
+  if (color !== undefined) paint.color.set(color)
 
   // Gövde ve cam kabin
   car.add(new THREE.Mesh(loft(-4.75, 5.0, 150, 48, bodySection), paint))
@@ -233,7 +236,7 @@ export function createCarModel() {
     add(car, new THREE.TorusGeometry(0.13, 0.022, 8, 28), tailLight, x, 0.74, -4.85)
   }
 
-  createWing(car)
+  createWing(car, paint)
 
   return car
 }

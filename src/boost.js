@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { isTyping } from './input.js'
 
 // --- Ayarlar: boost hissini bu sayılarla değiştirebilirsin ---
 const MULTIPLIER = 2 // boost aktifken en yüksek hız normalin kaç katı
@@ -150,7 +151,7 @@ export function createBoost(car, events = {}) {
 
   // Shift (sol ya da sağ). e.repeat: basılı tutunca tekrar tetiklenmesin
   window.addEventListener('keydown', (e) => {
-    if (!e.repeat && (e.code === 'ShiftLeft' || e.code === 'ShiftRight')) startBoost()
+    if (!e.repeat && !isTyping(e) && (e.code === 'ShiftLeft' || e.code === 'ShiftRight')) startBoost()
   })
 
   function update(dt) {

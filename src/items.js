@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { isTyping } from './input.js'
 import { trackCurve, trackDistance } from './track.js'
 import { course } from './course.js'
 import { rampSurface } from './ramps.js'
@@ -216,7 +217,7 @@ export function createItems(scene, car, seed, label, events = {}) {
   // 1, 2, 3 tuşları (üst sıra ya da sayı tuş takımı). e.repeat: basılı tutunca tekrar tetiklenmesin
   const keyToType = { Digit1: SHIELD, Digit2: MAGNET, Digit3: RUSH, Numpad1: SHIELD, Numpad2: MAGNET, Numpad3: RUSH }
   window.addEventListener('keydown', (e) => {
-    if (e.repeat || !(e.code in keyToType)) return
+    if (e.repeat || isTyping(e) || !(e.code in keyToType)) return
     useSkill(keyToType[e.code])
   })
 

@@ -16,7 +16,9 @@ import { createFall } from './fall.js'
 import { createItems, TOKEN_TYPES } from './items.js'
 import { createChain } from './chain.js'
 import { createTxHud } from './txHud.js'
+import { isTyping } from './input.js'
 import { createRace } from './race.js'
+import { createNet } from './net.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -176,7 +178,10 @@ let txHud = null
 const chain = createChain(() => txHud?.refresh())
 txHud = createTxHud(() => chain)
 
-// Yarış akışı (race.js): lobi → geri sayım (zincirden seed) → yarış → bitiş / DNF + sonuç ekranı.
+// Çok oyunculu sunucu bağlantısı (net.js): odalar, saat eşitleme, durum gönderme. Adres .env → VITE_SERVER_URL
+const net = createNet()
+
+// Yarış akışı (race.js): lobi → geri sayım (sunucunun başlangıç anı) → yarış → bitiş / DNF + sonuç ekranı.
 // Seed gelince parkuru race.js kurar, tokenları burada oluşturuyoruz (boost ve zincirle konuşuyorlar)
 let items = null
 const race = createRace({
@@ -184,6 +189,7 @@ const race = createRace({
   car,
   chain,
   gameState,
+  net,
   getScore: () => tricks.score,
   showMessage,
   holdMessage,
@@ -223,7 +229,7 @@ controls.enabled = false // başlangıçta takip kamerası aktif
 
 // C tuşu: takip kamerası ↔ serbest kamera
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'KeyC') return
+  if (e.code !== 'KeyC' || isTyping(e)) return
   controls.enabled = !controls.enabled
   if (controls.enabled) {
     controls.target.copy(car.model.position)

@@ -1,8 +1,10 @@
 import * as THREE from 'three'
 import { neon } from './neon.js'
+import { RACE_LENGTH } from '../shared/protocol.js'
 
-// Yarışın uzunluğu: pistin bir turu tam bu kadar (birim ≈ metre). Başlangıç ve bitiş aynı nokta (u = 0)
-export const RACE_LENGTH = 3000
+// Yarışın uzunluğu: pistin bir turu tam bu kadar (birim ≈ metre). Başlangıç ve bitiş aynı nokta (u = 0).
+// Değer shared/protocol.js'te: sunucunun hile kontrolü de aynı sayıyı kullanır
+export { RACE_LENGTH }
 
 // Pistin şekli: kontrol noktaları (x, y, z). y = yükseklik: hepsi suyun (y = 0) epey üstünde
 const BASE_POINTS = [

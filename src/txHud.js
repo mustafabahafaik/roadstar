@@ -1,11 +1,8 @@
 import { MONAD_TESTNET } from './chain.js'
+import { escapeHtml } from './html.js'
 
 // Sağ üst: ağ / cüzdan / canlı işlem akışı. Yarış sonu ekranı race.js'te. Stiller style.css'te (.tx-*)
 const MAX_ROWS = 8 // listede en fazla kaç işlem görünsün
-
-// Dışarıdan gelen yazıyı (RPC hata mesajı) HTML'e koymadan önce zararsızlaştır (XSS'e karşı)
-const escapeHtml = (text) =>
-  String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 
 const short = (hex) => (hex ? `${hex.slice(0, 6)}…${hex.slice(-4)}` : '—')
 
