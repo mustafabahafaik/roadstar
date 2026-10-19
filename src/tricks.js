@@ -128,7 +128,7 @@ export function createTricks(car, smoke, events = {}) {
   // main.js her karede car.update'ten SONRA çağırır
   function update(dt) {
     const s = car.state
-    const airborne = s.height > 0 && !s.falling && !s.crashed
+    const airborne = !s.onGround && !s.falling && !s.crashed // rampanın üstü de "yer" sayılır
     const canControl = !s.finished && !s.locked
 
     // Kalkış: o an basılı W/S'yi kilitle. Tuş bırakılınca kilit açılır

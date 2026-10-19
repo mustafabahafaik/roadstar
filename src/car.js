@@ -8,6 +8,7 @@ import { input } from './input.js'
 const FINISHED_INPUT = { forward: false, brake: true, left: false, right: false, jump: false }
 import { createCarModel } from './carModel.js'
 import { createThrusters } from './thrusters.js'
+import { rampSurface } from './ramps.js'
 
 // --- Ayarlar: oyun hissini bu sayılarla değiştirebilirsin ---
 const MAX_SPEED = 70 // birim / saniye
@@ -66,6 +67,7 @@ export function createCar(scene, smoke, events = {}) {
     height: 0, // yoldan yükseklik
     vy: 0, // dikey hız
     falling: false, // yolun dışına çıktı, aşağı düşüyor
+    onGround: true, // yolda ya da rampanın üstünde mi (applyGravity günceller; tricks.js de okur)
     fallTime: 0, // ne zamandır düşüyor (saniye)
     crashed: false, // bir engele çarptı
     crashTime: 0, // ne zamandır çarpmış durumda (saniye)
@@ -118,16 +120,29 @@ export function createCar(scene, smoke, events = {}) {
   }
 
   // Yerçekimi + yola iniş. Altında yol yoksa düşmeye başlar
+  // Yerçekimi + zemine iniş. Zemin: yol (0) ya da rampa yüzeyi (ramps.js). Altında yol yoksa düşer
   function applyGravity(dt, gravity) {
     state.vy -= gravity * dt // her karede aşağı doğru hız ekle
     state.height += state.vy * dt
-    if (state.height >= 0) return
+    if (state.falling) {
+      state.onGround = false // düşüyor: zemin yok, yerçekimiyle inmeye devam
+      return
+    }
+    const ground = rampSurface(state.u, state.offset)
+    if (state.height > ground.height) {
+      state.onGround = false // zeminin üstünde: havada
+      return
+    }
     const overRoad = Math.abs(state.offset) <= FALL_EDGE // altında yol var mı? (merkez + hoşgörü payı)
     if (overRoad && !state.falling) {
-      state.height = 0 // yol var: üstüne in, içine gömülme
-      state.vy = 0
+      state.height = ground.height // zemine otur, içine gömülme
+      // Dikey hız = zeminin eğimi × ileri hız. Düz yolda 0; rampada yukarı. Dudakta zemin bitince
+      // araba bu hızı korur → kendiliğinden havaya fırlar (ayrı bir "zıplatma" kodu gerekmez)
+      state.vy = ground.slope * state.speed
+      state.onGround = true
     } else if (!state.falling) {
       state.falling = true // altında yol yok: düşmeye başla
+      state.onGround = false
       events.onFall?.()
     }
   }
@@ -137,7 +152,7 @@ export function createCar(scene, smoke, events = {}) {
     // 1) Hız: gaz, fren, sürtünme. Block Rush (boost) en yüksek hızı ve ivmeyi artırır.
     // Havadayken W/S takla tuşudur (tricks.js): hız korunur, gaz/fren işlemez
     const maxSpeed = MAX_SPEED * state.boost
-    const airborne = state.height > 0 && !state.falling
+    const airborne = !state.onGround && !state.falling
     if (!airborne) {
       if (controls.forward) {
         // Gaz hızı en fazla sınıra kadar artırır; sınırın üstündeyse (boost yeni bittiyse) ekleme yapmaz
@@ -160,7 +175,7 @@ export function createCar(scene, smoke, events = {}) {
     state.offset = THREE.MathUtils.clamp(state.offset, -OFFSET_LIMIT, OFFSET_LIMIT)
 
     // 4) Zıplama, roketle süzülme ve yerçekimi
-    const onGround = state.height <= 0 && !state.falling
+    const onGround = state.onGround && !state.falling // yolda ya da rampanın üstünde
     if (onGround && controls.jump) {
       state.vy = JUMP_VELOCITY
       thrustPower = 1 // kalkışta roketler tam güç ateşlenir
@@ -172,7 +187,7 @@ export function createCar(scene, smoke, events = {}) {
     applyGravity(dt, hovering ? HOVER_GRAVITY : GRAVITY)
 
     // Roket gücü: yerdeyken söner, havada Space basılıysa tam, değilse yarım
-    const targetPower = state.height <= 0 ? 0 : hovering ? 1 : 0.35
+    const targetPower = state.onGround ? 0 : hovering ? 1 : 0.35
     thrustPower += (targetPower - thrustPower) * Math.min(1, dt * 6)
 
     // 5) Düşüyorsa: süreyi say, geri dönüşü fall.js yönetir (gerçek zamanla 2 sn sonra respawnAfterFall)
@@ -286,6 +301,7 @@ export function createCar(scene, smoke, events = {}) {
     state.vy = 0
     state.speed = RESPAWN_SPEED
     state.falling = false
+    state.onGround = true
     state.fallTime = 0
     state.crashed = false
     state.crashTime = 0

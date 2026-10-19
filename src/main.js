@@ -7,6 +7,7 @@ import { createPostFX } from './postfx.js'
 import { quality } from './settings.js'
 import { createTrack } from './track.js'
 import { createObstacles } from './obstacles.js'
+import { createRamps } from './ramps.js'
 import { createCar } from './car.js'
 import { createSmoke } from './smoke.js'
 import { createTricks } from './tricks.js'
@@ -129,6 +130,10 @@ scene.add(track)
 const obstacleGroup = createObstacles()
 scene.add(obstacleGroup)
 
+// Rampalar (ramps.js): üstünden hızla geçince araba kendiliğinden havalanır
+const rampGroup = createRamps()
+scene.add(rampGroup)
+
 // Ekran yazısı (HUD: oyunun üstüne bindirilen bilgi). Stili style.css'te
 const hudMessage = document.createElement('div')
 hudMessage.className = 'hud-message'
@@ -243,7 +248,7 @@ startRace()
 scene.add(car.model)
 
 // Hangi nesne gölge düşürür (castShadow), hangisi üstüne gölge alır (receiveShadow)
-for (const group of [track, obstacleGroup, car.model]) {
+for (const group of [track, obstacleGroup, rampGroup, car.model]) {
   group.traverse((obj) => {
     // ?. → malzeme dizisi ([boya, cam, ...]) ise userData yoktur, hata vermeden undefined döner
     if (!obj.isMesh || obj.material.userData?.bloom) return // neonlar ve alevler gölge düşürmez

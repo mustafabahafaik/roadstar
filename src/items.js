@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { trackCurve, trackDistance } from './track.js'
 import { obstacleBoxes } from './car.js'
+import { rampSurface } from './ramps.js'
 import { neon } from './neon.js'
 import { itemHash, itemTypeFromHash, hashFraction } from './random.js'
 import { createItemsHud } from './hud.js'
@@ -52,6 +53,9 @@ export function planTokens(seed) {
       const nearSide = Math.abs(offset - b.center) < halfWidth + 1.5
       if (nearAlong && nearSide) height = Math.max(height, b.top + 2.5)
     }
+    // Rampanın üstüne denk geliyorsa yüzeyin üstüne kaldır (rampanın içinde görünmez kalmasın)
+    const rampTop = rampSurface(u, offset).height
+    if (rampTop > 0) height = Math.max(height, rampTop + GROUND_HEIGHT)
     plan.push({ index, type, u, offset, height })
   }
   return plan
