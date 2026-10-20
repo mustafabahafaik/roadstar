@@ -125,6 +125,8 @@ export function createBoost(car, events = {}) {
   let shake = 0 // 1 → 0: boost başlangıcındaki kamera sarsıntısı
 
   const flames = createExhaustFlames(car.model)
+  const flameBase = FLAME_BLUE.clone() // boşta alev rengi: garajdaki "itici alevi" parçası değiştirir
+  let preview = false // garaj: araba dururken de alev görünsün (sadece görüntü, hız çarpanı değişmez)
   const speedLines = createSpeedLines()
   const hud = createBoostHud()
 
@@ -184,12 +186,12 @@ export function createBoost(car, events = {}) {
     // --- Egzoz alevleri: normalde kısa ve mavi, boost'ta uzun ve pembe-mor ---
     const idle = Math.min(1, car.state.speed / 70) * 0.5 // sürerken küçük bir alev
     const flicker = 0.85 + Math.random() * 0.3
-    const length = (0.15 + idle * 0.6 + intensity * 2.6) * flicker
+    const length = (0.15 + (preview ? 0.9 : idle * 0.6) + intensity * 2.6) * flicker
     for (const flame of flames) {
       flame.scale.set(1 + intensity * 1.8, 1 + intensity * 1.8, length)
       flame.visible = length > 0.2
     }
-    flames[0].material.color.lerpColors(FLAME_BLUE, FLAME_PINK, intensity).multiplyScalar(3 + intensity * 3)
+    flames[0].material.color.lerpColors(flameBase, FLAME_PINK, intensity).multiplyScalar(3 + intensity * 3)
     flames[0].material.opacity = 0.5 + intensity * 0.5
 
     speedLines.draw(intensity)
@@ -197,6 +199,8 @@ export function createBoost(car, events = {}) {
   }
 
   return {
+    setFlameColor: (hex) => flameBase.set(hex),
+    setFlamePreview: (on) => (preview = on),
     startBoost,
     addCharge,
     fill: () => addCharge(1),

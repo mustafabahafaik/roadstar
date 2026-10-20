@@ -21,6 +21,7 @@ import {
 } from '../shared/protocol.js'
 import { createPool, verifyOwnership } from './pool.js'
 import { createBotManager } from './bots.js'
+import { sanitizeLoadout } from '../src/parts.js'
 
 // server/.env → process.env (RESULT_SIGNER_KEY, POOL_ADDRESS...). Dosya yoksa ücretli oda kapalı çalışır
 try {
@@ -155,6 +156,7 @@ function publicRoom(room) {
       bot: p.bot,
       color: p.color,
       address: p.address,
+      loadout: p.loadout, // garaj parçaları (sadece görsel): rakipler arabayı bununla çizer
       paid: p.paid,
       ready: p.ready,
       status: p.status,
@@ -316,7 +318,9 @@ io.on('connection', (socket) => {
   // address + proof: isteğe bağlı. proof = ownershipMessage(socket.id) metninin burner cüzdanla imzası.
   // Kanıt yoksa ücretsiz yarışabilir ama ücretli odaya ödeme yapamaz
   // botToken: sadece sunucunun kendi botları bilir (bots.js). Lobide "BOT" rozeti buna göre
-  socket.on('join', ({ name, room: roomId, address, proof, botToken } = {}, ack = () => {}) => {
+  // loadout: garaj parçaları. Sadece görsel olduğu için sahiplik zincirden doğrulanmıyor; katalogda olmayan
+  // ya da yanlış slottaki id varsayılana döner (sanitizeLoadout). Hız / çarpışma hesabı parçalara hiç bakmaz
+  socket.on('join', ({ name, room: roomId, address, proof, botToken, loadout } = {}, ack = () => {}) => {
     if (typeof ack !== 'function') return
     if (room) return ack({ ok: false, error: 'Zaten bir odadasın' })
     const target = getRoom(cleanRoom(roomId))
@@ -346,6 +350,7 @@ io.on('connection', (socket) => {
       id: socket.id,
       name: safeName,
       bot: isBot,
+      loadout: sanitizeLoadout(loadout),
       color: freeColor(room),
       address: verified,
       paid: false,

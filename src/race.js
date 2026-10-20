@@ -102,7 +102,8 @@ function enableShadows(group) {
 // scene, car, chain, gameState, net: main.js'ten. onCourse(seed, label, race) → items (main.js oluşturur).
 // getScore: takla skoru (sonuç ekranı için). showMessage / holdMessage: ekran yazısı
 // router: ekran geçişleri (router.js) — lobi, yarış ve sonuç ekranlarını burada kaydederiz
-export function createRace({ scene, car, chain, gameState, net, router, onCourse, getScore, showMessage, holdMessage }) {
+// getLoadout: garaj parçaları (odaya girerken sunucuya gider, rakipler arabamızı böyle görür)
+export function createRace({ scene, car, chain, gameState, net, router, getLoadout, onCourse, getScore, showMessage, holdMessage }) {
   const race = { id: null, seed: null, onChain: false } // zincirdeki yarış numarası ve token seed'i
   let items = null
   let multiplayer = false
@@ -168,6 +169,7 @@ export function createRace({ scene, car, chain, gameState, net, router, onCourse
   const lobby = createLobby({
     net,
     chain,
+    getLoadout,
     onSolo: () =>
       beginCountdown({
         // ?seed=123 verilirse hep aynı parkur (deneme için), yoksa rastgele 32 bayt

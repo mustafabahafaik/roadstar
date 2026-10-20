@@ -48,6 +48,7 @@ export function createThrusters(carModel, scene, smoke) {
   })
 
   let spawnAccumulator = 0 // kesirli parçacıkları biriktir (ör. 0.4 + 0.7 = 1 parçacık)
+  let preview = false // garaj: araba dururken de küçük alev göster (sadece görüntü, itme yok)
   const worldPos = new THREE.Vector3()
   const down = new THREE.Vector3()
   const carry = new THREE.Vector3()
@@ -109,12 +110,13 @@ export function createThrusters(carModel, scene, smoke) {
     lateral.copy(right).multiplyScalar(carVelocity.dot(right))
     carry.copy(carVelocity).sub(lateral).multiplyScalar(0.88).addScaledVector(lateral, 0.3)
 
-    // Alevler: güce göre boy, küçük titreme ile canlı görünsün
+    // Alevler: güce göre boy, küçük titreme ile canlı görünsün. Önizlemede en az 0.6 (araba itilmez: sadece çizim)
+    const flamePower = preview ? Math.max(power, 0.6) : power
     for (const flame of flames) {
       const flicker = 0.85 + Math.random() * 0.3
-      const target = power * flicker
+      const target = flamePower * flicker
       flame.scale.y += (target - flame.scale.y) * Math.min(1, dt * 20)
-      flame.scale.x = flame.scale.z = Math.max(0.001, Math.min(1, power * 1.2))
+      flame.scale.x = flame.scale.z = Math.max(0.001, Math.min(1, flamePower * 1.2))
     }
 
     // Yeni duman: tekerleklerin altındaki dünya konumundan
@@ -131,5 +133,15 @@ export function createThrusters(carModel, scene, smoke) {
     }
   }
 
-  return { update, burst }
+  // Garajdaki "itici alevi" parçası: dış koninin rengi (iç çekirdek beyaz kalır, sıcak görünür)
+  function setColor(hex) {
+    for (const flame of flames) flame.children[0].material.color.set(hex).multiplyScalar(2.5)
+  }
+
+  return {
+    update,
+    burst,
+    setColor,
+    setPreview: (on) => (preview = on),
+  }
 }

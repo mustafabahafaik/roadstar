@@ -22,6 +22,7 @@ import { createNet } from './net.js'
 import { createRouter } from './router.js'
 import { createLanding } from './landing.js'
 import { createGarage } from './garage.js'
+import { DEFAULT_LOADOUT, applyLoadout } from './parts.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -187,6 +188,13 @@ const net = createNet()
 // Ekranlar arası geçiş (router.js): giriş → garaj → lobi → yarış → sonuç → giriş
 const router = createRouter()
 
+// Garaj parçaları (parts.js, SADECE GÖRSEL): zincirde takılı loadout. Garaj değiştirir, lobi odaya girerken gönderir
+let loadout = [...DEFAULT_LOADOUT]
+function setLoadout(ids) {
+  loadout = [...ids]
+  applyLoadout(car.model, loadout, { thrusters: car.thrusters, boost })
+}
+
 // Yarış akışı (race.js): lobi → geri sayım (sunucunun başlangıç anı) → yarış → bitiş / DNF + sonuç ekranı.
 // Seed gelince parkuru race.js kurar, tokenları burada oluşturuyoruz (boost ve zincirle konuşuyorlar)
 let items = null
@@ -197,6 +205,7 @@ const race = createRace({
   gameState,
   net,
   router,
+  getLoadout: () => loadout,
   getScore: () => tricks.score,
   showMessage,
   holdMessage,
@@ -266,7 +275,16 @@ const fall = createFall({
 
 // Giriş sayfası (landing.js) ve garaj (garage.js): arkada araba vitrin kamerasında döner
 createLanding({ router, chain, cameraModes })
-createGarage({ router, cameraModes })
+createGarage({ router, cameraModes, chain, car, boost, getEquipped: () => loadout, setEquipped: setLoadout })
+
+// Açılışta: zincirdeki parçalarını arabaya uygula (garaja girmesen de yarışa kendi parçalarınla çıkarsın)
+setLoadout(loadout)
+if (chain.garageEnabled) {
+  chain
+    .readGarage('loadoutOf', [chain.address])
+    .then(([ids]) => setLoadout(ids.map(Number)))
+    .catch((err) => console.warn('loadoutOf okunamadı, varsayılan parçalar:', err.shortMessage ?? err.message))
+}
 router.start() // ilk ekran: adresteki (#/ giriş, #/garaj, #/lobi)
 
 // --- 9. Post-processing: seçici bloom + kenar yumuşatma (postfx.js) ---

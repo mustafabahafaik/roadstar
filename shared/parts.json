@@ -1,0 +1,31 @@
+{
+  "slots": ["Boya", "Jant", "Arka kanat", "Alt neon", "İtici alevi"],
+  "parts": [
+    { "id": 1, "slot": 0, "name": "Buz Beyazı", "priceWei": "0", "color": "#f2f4f6", "metal": 0.1, "rough": 0.3 },
+    { "id": 2, "slot": 0, "name": "Monad Moru", "priceWei": "20000000000000000", "color": "#836ef9", "metal": 0.3, "rough": 0.25 },
+    { "id": 3, "slot": 0, "name": "Neon Pembe", "priceWei": "20000000000000000", "color": "#ff3bd6", "metal": 0.2, "rough": 0.3 },
+    { "id": 4, "slot": 0, "name": "Gece Siyahı", "priceWei": "30000000000000000", "color": "#101219", "metal": 0.5, "rough": 0.2 },
+    { "id": 5, "slot": 0, "name": "Altın Krom", "priceWei": "50000000000000000", "color": "#d9a93a", "metal": 1, "rough": 0.12 },
+
+    { "id": 11, "slot": 1, "name": "Grafit", "priceWei": "0", "color": "#3a3e46", "metal": 1, "rough": 0.28 },
+    { "id": 12, "slot": 1, "name": "Krom", "priceWei": "10000000000000000", "color": "#d6dae0", "metal": 1, "rough": 0.08 },
+    { "id": 13, "slot": 1, "name": "Altın", "priceWei": "20000000000000000", "color": "#d9a93a", "metal": 1, "rough": 0.2 },
+    { "id": 14, "slot": 1, "name": "Neon Camgöbeği", "priceWei": "30000000000000000", "color": "#00f0ff", "metal": 0.4, "rough": 0.3, "glow": true },
+
+    { "id": 21, "slot": 2, "name": "Karbon", "priceWei": "0", "color": "#14161b", "metal": 0.5, "rough": 0.4 },
+    { "id": 22, "slot": 2, "name": "Gövde Rengi", "priceWei": "10000000000000000", "color": "paint", "metal": 0.1, "rough": 0.3 },
+    { "id": 23, "slot": 2, "name": "Krom", "priceWei": "20000000000000000", "color": "#d6dae0", "metal": 1, "rough": 0.08 },
+    { "id": 24, "slot": 2, "name": "Neon Pembe", "priceWei": "30000000000000000", "color": "#ff3bd6", "metal": 0.2, "rough": 0.3, "glow": true },
+
+    { "id": 31, "slot": 3, "name": "Kapalı", "priceWei": "0", "color": "none" },
+    { "id": 32, "slot": 3, "name": "Camgöbeği", "priceWei": "20000000000000000", "color": "#00f0ff" },
+    { "id": 33, "slot": 3, "name": "Pembe", "priceWei": "20000000000000000", "color": "#ff3bd6" },
+    { "id": 34, "slot": 3, "name": "Monad Moru", "priceWei": "30000000000000000", "color": "#836ef9" },
+    { "id": 35, "slot": 3, "name": "Asit Yeşili", "priceWei": "30000000000000000", "color": "#7dff6b" },
+
+    { "id": 41, "slot": 4, "name": "Plazma Mavisi", "priceWei": "0", "color": "#6aa8ff" },
+    { "id": 42, "slot": 4, "name": "Pembe Ateş", "priceWei": "20000000000000000", "color": "#ff3bd6" },
+    { "id": 43, "slot": 4, "name": "Zehir Yeşili", "priceWei": "20000000000000000", "color": "#7dff6b" },
+    { "id": 44, "slot": 4, "name": "Güneş Turuncusu", "priceWei": "30000000000000000", "color": "#ff8a2a" }
+  ]
+}

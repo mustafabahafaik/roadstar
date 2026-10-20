@@ -10,7 +10,7 @@ import { createThrusters } from './thrusters.js'
 import { rampSurface } from './ramps.js'
 
 // --- Ayarlar: oyun hissini bu sayılarla değiştirebilirsin ---
-const MAX_SPEED = 70 // birim / saniye
+const MAX_SPEED = 70 // birim / saniye (garaj parçalarından bağımsız)
 const ACCELERATION = 30 // gaza basınca hız artışı (birim / saniye²)
 const BRAKE = 60 // frenleme
 const DRAG = 8 // gaz bırakılınca yavaşlama
@@ -32,7 +32,8 @@ const FUEL_REGEN = 0.05 // yerdeyken saniyede dolan yakıt (boştan dolmaya 20 s
 const BOOST_THRUST = 2.5 // boost aktifken hedef hıza yaklaşma hızı (büyüdükçe daha sert hızlanır)
 const OVERSPEED_DECAY = 2 // boost bitince sınırın üstündeki fazla hızın sönme hızı (üstel, yumuşak)
 
-// Arabanın çarpışma kutusu (carModel.js ölçüleri: boy ≈ 9.7, genişlik ≈ 4.1)
+// Arabanın çarpışma kutusu (carModel.js ölçüleri: boy ≈ 9.7, genişlik ≈ 4.1).
+// Garaj parçaları (parts.js) bu değerlere, MAX_SPEED'e ve ivmeye DOKUNMAZ: herkes aynı kutu ve hızla yarışır
 const CAR_HALF_LENGTH = 4.8
 export const CAR_HALF_WIDTH = 2.0
 
@@ -314,6 +315,7 @@ export function createCar(scene, smoke, events = {}) {
   return {
     model,
     frame,
+    thrusters, // garaj: alev rengi ve önizleme (parts.js)
     state,
     velocity,
     update,

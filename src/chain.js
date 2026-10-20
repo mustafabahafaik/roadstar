@@ -15,6 +15,9 @@ export const RACE_ADDRESS = '0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434'
 export const POOL_ADDRESS = import.meta.env.VITE_POOL_ADDRESS || '' // deploy edince adresi '' içine yapıştır
 export const ENTRY_FEE = parseEther('1') // odayı kuranın seçtiği giriş ücreti: 1 MON (10^18 wei)
 
+// GarageParts (görsel araba parçaları, ERC1155) adresi. Boşken garaj sadece önizleme yapar
+export const GARAGE_ADDRESS = import.meta.env.VITE_GARAGE_ADDRESS || '' // deploy edince adresi '' içine yapıştır
+
 export const explorerTx = (hash) => `${MONAD_TESTNET.explorer}/tx/${hash}`
 
 // Race kontratının sadece kullandığımız fonksiyonları ve olayı (insan okunur ABI)
@@ -37,12 +40,23 @@ const poolAbi = new Interface([
   'event RoomCreated(uint256 indexed roomId, address indexed creator, uint256 entryFee, uint8 maxPlayers)',
 ])
 
+// GarageParts: parça satın al, tak, loadout oku
+const garageAbi = new Interface([
+  'function buy(uint256 id) payable',
+  'function equip(uint256 id)',
+  'function loadoutOf(address player) view returns (uint256[5] ids)',
+  'function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])',
+])
+
 // Her işlem hangi kontrata gider
 const CONTRACTS = {
   race: { address: RACE_ADDRESS, abi: raceAbi },
   pool: { address: POOL_ADDRESS, abi: poolAbi },
+  garage: { address: GARAGE_ADDRESS, abi: garageAbi },
 }
 const POOL_METHODS = new Set(['createRoom', 'joinRoom', 'settle', 'withdraw'])
+const GARAGE_METHODS = new Set(['buy', 'equip'])
+const contractFor = (method) => CONTRACTS[POOL_METHODS.has(method) ? 'pool' : GARAGE_METHODS.has(method) ? 'garage' : 'race']
 
 // startRace makbuzundaki RaceStarted olayından yarış numarasını ve tohumu oku
 export function parseRaceStarted(receipt) {
@@ -72,6 +86,8 @@ const GAS_LIMITS = {
   useSkill: 95000n,
   finishRace: 80000n,
   ...POOL_GAS_LIMITS,
+  buy: 100000n, // GarageParts: 55.7k (mint) + 21k + pay
+  equip: 95000n, // 53.6k + 21k + pay
 }
 const RECEIPT_POLL_MS = 150 // onayı kaç ms'de bir soralım (ölçüm hassasiyeti)
 const FEE_REFRESH_MS = 20000 // gas fiyatını ne sıklıkla güncelleyelim
@@ -186,7 +202,7 @@ export function createChain(onChange = () => {}) {
     tx.confirmation.catch(() => {}) // bekleyen yoksa "yakalanmamış hata" uyarısı çıkmasın
     txs.push(tx)
     onChange()
-    const target = CONTRACTS[POOL_METHODS.has(method) ? 'pool' : 'race']
+    const target = contractFor(method)
     if (!target.address) {
       tx.status = 'skipped'
       tx.error = 'kontrat adresi yok'
@@ -266,21 +282,24 @@ export function createChain(onChange = () => {}) {
     }
   }
 
-  // Havuzdan okuma (işlem değil, ücretsiz): getRoom, claimable
-  async function readPool(method, args) {
-    const data = poolAbi.encodeFunctionData(method, args)
-    const result = await provider.call({ to: POOL_ADDRESS, data })
-    return poolAbi.decodeFunctionResult(method, result)
+  // Kontrattan okuma (işlem değil, ücretsiz): eth_call ile fonksiyonu çalıştırıp sonucu çöz
+  async function read({ address, abi }, method, args) {
+    const result = await provider.call({ to: address, data: abi.encodeFunctionData(method, args) })
+    return abi.decodeFunctionResult(method, result)
   }
+  const readPool = (method, args) => read(CONTRACTS.pool, method, args) // getRoom, claimable
+  const readGarage = (method, args) => read(CONTRACTS.garage, method, args) // loadoutOf, balanceOfBatch
 
   return {
     enabled,
     poolEnabled,
+    garageEnabled: GARAGE_ADDRESS !== '',
     address: wallet.address,
     txs,
     send,
     stats,
     readPool,
+    readGarage,
     // Bu cüzdanın bugüne kadar gönderdiği işlem sayısı = zincirdeki nonce'u (giriş sayfası istatistiği)
     getTxCount: () => provider.getTransactionCount(wallet.address, 'latest'),
     // Sunucuya "bu adres benim" kanıtı: metni burner anahtarıyla imzala (işlem değil, zincire gitmez)

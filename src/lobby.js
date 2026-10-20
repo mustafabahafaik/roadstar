@@ -27,7 +27,7 @@ const mon = (wei) => `${Number(formatEther(wei))} MON`
 // Lobi ekranı: sunucuya bağlan → takma ad + oda → oyuncu listesi + (ücretli oda: yatır) + "Hazırım".
 // Yarışı sunucu başlatır ('start' olayını race.js dinler). onSolo: sunucusuz tek kişilik yarış.
 // onBack: "← Ana sayfa". Router ekrana getirince show(), giderken hide() çağırır (race.js)
-export function createLobby({ net, chain, onSolo, onBack }) {
+export function createLobby({ net, chain, getLoadout, onSolo, onBack }) {
   const params = new URLSearchParams(window.location.search)
   const el = document.createElement('div')
   el.className = 'race-lobby'
@@ -120,7 +120,8 @@ export function createLobby({ net, chain, onSolo, onBack }) {
     try {
       // "Bu adres benim" kanıtı: sunucunun verdiği bağlantı numarasını (socket.id) burner anahtarla imzala
       const proof = await chain.signMessage(ownershipMessage(net.id))
-      const res = await net.join(name, roomInput.value, { address: chain.address, proof })
+      // loadout: garaj parçaları (sadece görsel): rakipler arabamızı bu parçalarla görür
+      const res = await net.join(name, roomInput.value, { address: chain.address, proof, loadout: getLoadout() })
       if (!res.ok) throw new Error(res.error)
       joined = true
       saveName(name)

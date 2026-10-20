@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createCarModel } from './carModel.js'
+import { applyLoadout } from './parts.js'
 import { SEND_RATE, TICK_RATE } from '../shared/protocol.js'
 
 // Rakip arabalar: sunucudan gelen durumları biraz GERİDEN oynatırız (interpolasyon).
@@ -49,6 +50,8 @@ export function createRemotePlayers(scene, net) {
 
   function add(info) {
     const model = createCarModel(info.color)
+    // Rakibin garaj parçaları (sadece görsel). Varsayılan boyadaysa oyuncu rengi: yarışta ayırt edilsin
+    applyLoadout(model, info.loadout, { playerColor: info.color })
     model.traverse((obj) => {
       if (obj.isMesh) obj.castShadow = true
     })

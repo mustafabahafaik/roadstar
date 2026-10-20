@@ -8,6 +8,7 @@ import { trackCurve, trackLength, TRACK_WIDTH } from '../src/track.js'
 import { buildCourse } from '../src/course.js'
 import { rampSurfaceIn } from '../src/ramps.js'
 import { SEND_RATE, POOL_GAS_LIMITS, ownershipMessage } from '../shared/protocol.js'
+import { SLOTS, partsInSlot } from '../src/parts.js'
 
 // --- Sürüş ayarları ---
 const TOP_SPEED = 66 // insanın azami hızı 70 (boost'la 140): iyi süren insan botu geçebilsin
@@ -35,6 +36,12 @@ const POOL_ABI = [
 ]
 
 const rand = (min, max) => min + Math.random() * (max - min)
+// Botun garaj parçaları: her slottan rastgele biri (sadece görsel; demo'da garajın vitrini gibi dursunlar)
+const randomLoadout = () =>
+  SLOTS.map((_, slot) => {
+    const options = partsInSlot(slot)
+    return options[Math.floor(Math.random() * options.length)].id
+  })
 const clamp = (v, min, max) => Math.min(Math.max(v, min), max)
 const UP = new THREE.Vector3(0, 1, 0)
 const AXIS_X = new THREE.Vector3(1, 0, 0)
@@ -303,7 +310,7 @@ export function createBotPilot({ serverUrl, room, name, key, provider, poolAddre
     try {
       await syncClock()
       const proof = wallet ? await wallet.signMessage(ownershipMessage(socket.id)) : undefined
-      const res = await socket.emitWithAck('join', { name, room, address: wallet?.address, proof, botToken })
+      const res = await socket.emitWithAck('join', { name, room, address: wallet?.address, proof, botToken, loadout: randomLoadout() })
       if (!res.ok) return leave(`katılamadı (${res.error})`)
       onRoom(res.room)
     } catch (err) {

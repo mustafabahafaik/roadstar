@@ -7,6 +7,9 @@ libs = ["lib"]      # forge install ile gelen kütüphaneler
 solc = "0.8.28"     # Solidity derleyici sürümü
 evm_version = "cancun"
 
+# Deploy betikleri parça kataloğunu (shared/parts.json) okuyabilsin: Foundry proje dışına izinsiz dokunmaz
+fs_permissions = [{ access = "read", path = "../shared" }]
+
 # import "@openzeppelin/..." yazınca hangi klasöre bakılacağı
 remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",

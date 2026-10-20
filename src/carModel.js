@@ -102,7 +102,8 @@ function add(group, geometry, material, x, y, z) {
 }
 
 // --- Tekerlek: yuvarlak omuzlu lastik + çok kollu jant + fren diski ---
-function createWheel(outerSign) {
+// rim: jant malzemesi (her arabanın kendi kopyası: garajdaki jant parçası bunu boyar)
+function createWheel(outerSign, rim) {
   const wheel = new THREE.Group()
   const r = WHEEL_RADIUS
   const hw = WHEEL_WIDTH / 2
@@ -115,13 +116,13 @@ function createWheel(outerSign) {
   wheel.add(new THREE.Mesh(new THREE.LatheGeometry(tireProfile, 48), rubber))
 
   // Jant göbeği ve fren diski
-  add(wheel, new THREE.CylinderGeometry(0.5, 0.5, WHEEL_WIDTH * 0.85, 40, 1, true), alloy, 0, 0, 0)
+  add(wheel, new THREE.CylinderGeometry(0.5, 0.5, WHEEL_WIDTH * 0.85, 40, 1, true), rim, 0, 0, 0)
   add(wheel, new THREE.CylinderGeometry(0.4, 0.4, 0.06, 32), carbon, 0, 0, 0)
 
   // Dış yüzde 10 ince kol + orta kapak
   const face = outerSign * (hw - 0.08)
   for (let i = 0; i < 10; i++) {
-    const spoke = add(wheel, new THREE.BoxGeometry(0.07, 0.05, 0.46), alloy, 0, face, 0)
+    const spoke = add(wheel, new THREE.BoxGeometry(0.07, 0.05, 0.46), rim, 0, face, 0)
     const angle = (i / 10) * Math.PI * 2
     spoke.rotation.y = angle
     spoke.position.x = Math.sin(angle) * 0.25
@@ -135,7 +136,8 @@ function createWheel(outerSign) {
 }
 
 // --- Arka kanat: kuğu boynu taşıyıcılar + karbon kanat + açılı beyaz yan plakalar ---
-function createWing(car, paint) {
+// wingMaterial: kanat bıçağının malzemesi (her arabanın kendi kopyası: garajdaki kanat parçası bunu boyar)
+function createWing(car, paint, wingMaterial) {
   const wingZ = -4.2
   const wingY = 3.05
 
@@ -159,7 +161,7 @@ function createWing(car, paint) {
   const bladeGeometry = new THREE.ExtrudeGeometry(foil, { depth: 3.7, bevelEnabled: false, curveSegments: 12 })
   bladeGeometry.rotateY(-Math.PI / 2) // şeklin x'i → arabanın z'si
   bladeGeometry.translate(1.85, 0, 0) // genişlikte ortala
-  const blade = add(car, bladeGeometry, carbon, 0, wingY, wingZ)
+  const blade = add(car, bladeGeometry, wingMaterial, 0, wingY, wingZ)
   blade.rotation.x = -0.12 // hücum açısı: arabayı yola bastırır
 
   // Yan plakalar: geriye doğru genişleyen yamuk
@@ -177,11 +179,49 @@ function createWing(car, paint) {
   }
 }
 
-// color: boya rengi (rakip arabalar için). Verilmezse beyaz; boya malzemesinin kopyası boyanır
+// Alt neon: arabanın altında yola vuran parıltı (ortası parlak, kenarlara doğru sönen yuvarlak doku).
+// Garajdaki "alt neon" parçası açar ve boyar; varsayılan kapalı
+let underglowTexture = null
+function createUnderglow() {
+  if (!underglowTexture) {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 128
+    const ctx = canvas.getContext('2d')
+    const gradient = ctx.createRadialGradient(64, 64, 4, 64, 64, 64)
+    gradient.addColorStop(0, 'rgba(255,255,255,1)')
+    gradient.addColorStop(0.5, 'rgba(255,255,255,0.45)')
+    gradient.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, 128, 128)
+    underglowTexture = new THREE.CanvasTexture(canvas)
+  }
+  const material = new THREE.MeshBasicMaterial({
+    map: underglowTexture,
+    transparent: true,
+    blending: THREE.AdditiveBlending, // ışık gibi: yolun rengine eklenir
+    depthWrite: false,
+  })
+  material.userData.bloom = true // postfx.js: parlasın
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(5.2, 11), material)
+  glow.rotation.x = -Math.PI / 2 // yere yatır
+  glow.position.y = 0.06 // yolun hemen üstü (araba tabanı y = 0)
+  glow.renderOrder = 2
+  glow.visible = false
+  return glow
+}
+
+// color: boya rengi (rakip arabalar için). Verilmezse beyaz.
+// Her araba boya, jant ve kanat malzemesinin KENDİ kopyasını alır: garaj parçaları (parts.js) sadece o arabayı boyar.
+// ⚠️ Parçalar sadece görünüşü değiştirir: modelin ölçüleri ve car.js'teki çarpışma kutusu sabittir
 export function createCarModel(color) {
   const car = new THREE.Group()
-  const paint = color === undefined ? basePaint : basePaint.clone()
+  const paint = basePaint.clone()
   if (color !== undefined) paint.color.set(color)
+  const rim = alloy.clone()
+  const wingMaterial = carbon.clone()
+  const underglow = createUnderglow()
+  car.add(underglow)
+  car.userData.custom = { paint, rim, wing: wingMaterial, underglow, baseColor: paint.color.getHex() }
 
   // Gövde ve cam kabin
   car.add(new THREE.Mesh(loft(-4.75, 5.0, 150, 48, bodySection), paint))
@@ -192,7 +232,7 @@ export function createCarModel(color) {
 
   // Tekerlekler
   for (const p of WHEEL_POSITIONS) {
-    const wheel = createWheel(p.x > 0 ? 1 : -1)
+    const wheel = createWheel(p.x > 0 ? 1 : -1, rim)
     wheel.position.copy(p)
     car.add(wheel)
   }
@@ -236,7 +276,7 @@ export function createCarModel(color) {
     add(car, new THREE.TorusGeometry(0.13, 0.022, 8, 28), tailLight, x, 0.74, -4.85)
   }
 
-  createWing(car, paint)
+  createWing(car, paint, wingMaterial)
 
   return car
 }

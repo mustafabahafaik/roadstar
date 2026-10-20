@@ -839,17 +839,101 @@ body[data-screen='garage'] .tx-list {
 }
 .landing-stats b { color: #ffd23f; font-size: 14px; }
 
-/* --- Garaj (garage.js): şimdilik boş sayfa --- */
+/* --- Garaj (garage.js) ---
+   Katman tıklamaları geçirir (pointer-events: none): boş yerde sürükleyince araba döner.
+   Sadece başlık, panel ve düğmeler tıklanabilir */
 .garage {
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(8, 10, 22, 0.78), rgba(8, 10, 22, 0.15) 42%, transparent 70%);
+}
+.garage > * { pointer-events: auto; }
+.garage-head {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.garage-head .lobby-back { position: static; }
+.garage h1 { margin: 0; font-size: 34px; letter-spacing: 0.14em; }
+.garage-head p { margin: 2px 0 0; font-size: 12px; color: #ffd23f; }
+.garage-panel {
+  position: absolute;
+  top: 96px;
+  left: 16px;
+  bottom: 16px;
+  width: min(380px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  text-align: center;
+  gap: 10px;
+  padding: 12px;
+  box-sizing: border-box;
+  border-radius: 16px;
+  background: rgba(8, 10, 22, 0.72);
+  border: 1px solid rgba(155, 107, 255, 0.4);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
 }
-.garage h1 { font-size: clamp(44px, 10vw, 110px); }
-.garage p { margin: 12px 0 0; font-size: 16px; opacity: 0.85; }
+.garage-slots { display: flex; flex-wrap: wrap; gap: 6px; }
+.garage-slots button {
+  flex: 1 1 auto;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  background: transparent;
+  color: #e6eaff;
+  font: 700 12px system-ui, sans-serif;
+  cursor: pointer;
+}
+.garage-slots button.on { background: #9b6bff; border-color: #9b6bff; }
+.garage-cards {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: start;
+  gap: 8px;
+  overflow-y: auto;
+}
+.garage-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 10px 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6eaff;
+  font: 500 12px/1.25 system-ui, sans-serif;
+  cursor: pointer;
+}
+.garage-card.selected { border-color: #29e7ff; box-shadow: 0 0 0 1px #29e7ff, 0 0 18px rgba(0, 240, 255, 0.3); }
+.garage-card b { font-size: 13px; text-align: center; }
+.garage-card small { opacity: 0.7; }
+.garage-swatch { width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.25); }
+.garage-chip {
+  margin-top: 3px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+.garage-chip.on { background: #2bd47d; color: #062414; }
+.garage-chip.own { background: rgba(0, 240, 255, 0.2); color: #29e7ff; }
+.garage-chip.buy { background: rgba(255, 210, 63, 0.18); color: #ffd23f; }
+.garage-action { display: grid; gap: 4px; justify-items: center; }
+.garage-action .race-start { margin: 0; width: 100%; }
+.garage-action .garage-buy { background: #e0a800; box-shadow: 0 0 20px rgba(255, 210, 63, 0.45); }
+.garage-action a,
+.garage-status a { color: #29e7ff; }
+.garage-status { margin: 0; min-height: 16px; font-size: 12px; text-align: center; opacity: 0.9; }
+.garage-play { position: absolute; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); min-width: 0; }
+
+/* Dokunmatik ekranda sürükleme sayfayı kaydırmasın, arabayı çevirsin */
+canvas { touch-action: none; }
 
 /* Lobi: ana sayfaya dön */
 .lobby-back {
@@ -896,6 +980,13 @@ body[data-screen='garage'] .tx-list {
   .landing-map-art { height: 48px; }
   .landing-stats { flex-direction: column; align-items: center; gap: 2px; }
   .race-lobby { padding-top: 64px; }
+  .garage { background: linear-gradient(to top, rgba(8, 10, 22, 0.85), transparent 55%); }
+  .garage-head { top: 96px; }
+  .garage h1 { font-size: 24px; }
+  .garage-panel { top: auto; bottom: 74px; left: 10px; width: auto; right: 10px; max-height: 46vh; }
+  .garage-cards { display: flex; overflow-x: auto; overflow-y: hidden; }
+  .garage-card { flex: 0 0 104px; }
+  .garage-play { left: 10px; right: 10px; bottom: max(12px, env(safe-area-inset-bottom)); }
 }
 /* Yatay telefon (alçak ekran): boşlukları kıs */
 @media (max-height: 520px) {

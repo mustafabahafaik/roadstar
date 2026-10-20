@@ -4,6 +4,7 @@ import * as THREE from 'three'
 //   'chase' → takip: arabanın arkasında ve yukarısında (fareyle sürükleyince etrafına bakar)
 //   'fall'  → düşüş: arabanın düştüğü tarafta, yanında ve biraz yukarıda durup arabaya bakar
 //   'showcase' → vitrin (giriş sayfası): arabanın etrafında yavaşça döner
+//   'garage' → garaj: seçili parçaya yaklaşır (jant → tekerlek), fareyle / parmakla çevrilir
 // Geçiş ani değil: iki modun hedef noktası her karede hesaplanır, blend (0 → 1) yumuşakça değişir
 // ve kamera bu ikisinin arasına konur.
 
@@ -16,6 +17,15 @@ const SHOWCASE_SPEED = 0.22 // vitrin: dönüş hızı (rad/sn) → bir tur ~29 
 const SHOWCASE_RADIUS = 14 // bitiş kapısının sütunları ~10.7 birimde: içinden geçmesin
 const SHOWCASE_HEIGHT = 3.2
 
+// Garaj odakları (arabanın kendi ekseninde: +z burun, +x sol). target: bakılan nokta, yaw: kameranın açısı
+const GARAGE_FOCUS = [
+  { target: [0, 1.4, 0], radius: 11, height: 2.4, yaw: 0.8 }, // 0 boya: tüm araba, önden-yandan (cos > 0 → önde)
+  { target: [1.68, 0.72, 2.95], radius: 4.4, height: 0.5, yaw: 1.25 }, // 1 jant: sol ön tekerlek, yandan
+  { target: [0, 3.0, -4.2], radius: 6.2, height: 2.4, yaw: -2.5 }, // 2 arka kanat: arkadan, yukarıdan
+  { target: [0, 0.3, 0], radius: 8.5, height: 0.25, yaw: 1.57 }, // 3 alt neon: yandan, yola yakın
+  { target: [0, 0.8, -4.9], radius: 5.5, height: 0.9, yaw: -2.85 }, // 4 itici alevi: arka egzoz
+]
+
 // isOrbitEnabled: serbest kamera (C tuşu) açıksa fare olaylarını OrbitControls'e bırak
 export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabled }) {
   // Fareyle sürükleyince arabanın etrafında dönme, bırakınca yavaşça arkaya geri gelme
@@ -25,6 +35,13 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   let fallSide = 1 // düşülen taraf: +1 sağ, −1 sol
   let showcaseAngle = 2.4 // vitrin: kameranın arabaya göre açısı (önden-yandan başla)
   const showcasePosition = new THREE.Vector3()
+  const garage = { focus: GARAGE_FOCUS[0], yaw: 0, zoom: 1 } // yaw / zoom: kullanıcının sürükleme ve tekerlek payı
+  // Kameranın arabaya göre şu anki yörüngesi (arabanın ekseninde). Geçişte KONUM değil bu değerler kayar:
+  // kamera arabanın etrafında dönerek yeni odağa gider, düz çizgide gövdenin içinden geçmez
+  const orbit = { yaw: 0, radius: 11, height: 2.4, target: new THREE.Vector3(0, 1.4, 0) }
+  const goalTarget = new THREE.Vector3()
+  const orbitWorld = new THREE.Vector3()
+  const lookWorld = new THREE.Vector3()
 
   const chasePosition = new THREE.Vector3()
   const chaseLook = new THREE.Vector3()
@@ -39,6 +56,10 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   })
   domElement.addEventListener('pointermove', (e) => {
     if (!look.dragging) return
+    if (mode === 'garage') {
+      garage.yaw -= e.movementX * 0.008 // garajda çevirme kalıcı (bırakınca geri dönmez)
+      return
+    }
     look.yaw -= e.movementX * 0.006 // movementX: son olaydan beri farenin yatay hareketi (piksel)
     look.height = THREE.MathUtils.clamp(look.height + e.movementY * 0.03, -3.5, 10)
   })
@@ -47,15 +68,59 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
     'wheel',
     (e) => {
       if (isOrbitEnabled()) return
-      look.distance = THREE.MathUtils.clamp(look.distance + e.deltaY * 0.01, 9, 34)
+      if (mode === 'garage') garage.zoom = THREE.MathUtils.clamp(garage.zoom + e.deltaY * 0.001, 0.6, 1.8)
+      else look.distance = THREE.MathUtils.clamp(look.distance + e.deltaY * 0.01, 9, 34)
     },
     { passive: true },
   )
 
   // side: düşülen taraf (+1 sağ, −1 sol). Sadece 'fall' modunda anlamlı
   function setMode(next, { side = 1 } = {}) {
+    if (next === 'garage' && mode !== 'garage') {
+      // Yörüngeyi kameranın şu anki yerinden başlat: vitrinden garaja ani sıçrama olmasın
+      orbitWorld.copy(camera.position)
+      car.frame.worldToLocal(orbitWorld)
+      orbit.target.set(0, 1.4, 0)
+      orbit.yaw = Math.atan2(orbitWorld.x, orbitWorld.z)
+      orbit.radius = Math.hypot(orbitWorld.x, orbitWorld.z)
+      orbit.height = orbitWorld.y - orbit.target.y
+    }
     mode = next
     if (next === 'fall') fallSide = side
+  }
+
+  // Garaj: hangi slota odaklanılsın (0 boya … 4 itici alevi). Kullanıcının çevirmesi sıfırlanır
+  function focusSlot(slot) {
+    garage.focus = GARAGE_FOCUS[slot] ?? GARAGE_FOCUS[0]
+    garage.yaw = 0
+    garage.zoom = 1
+  }
+
+  function updateGarage(dt) {
+    const f = garage.focus
+    const ease = 1 - Math.exp(-4 * dt) // yumuşak yaklaşma: slot değişince kamera kayarak gelir
+    // Açı en kısa yoldan dönsün (350° → 10° giderken 340° geri değil 20° ileri)
+    const yawDiff = Math.atan2(Math.sin(f.yaw + garage.yaw - orbit.yaw), Math.cos(f.yaw + garage.yaw - orbit.yaw))
+    orbit.yaw += yawDiff * ease
+    orbit.radius += (f.radius * garage.zoom - orbit.radius) * ease
+    orbit.height += (f.height - orbit.height) * ease
+    orbit.target.lerp(goalTarget.set(f.target[0], f.target[1], f.target[2]), ease)
+
+    orbitWorld.set(
+      orbit.target.x + Math.sin(orbit.yaw) * orbit.radius,
+      orbit.target.y + orbit.height,
+      orbit.target.z + Math.cos(orbit.yaw) * orbit.radius,
+    )
+    // Gövdenin dışında kal: kamera arabanın kutusuna (yarım genişlik ~2.1, boy ~4.9) girerse yana it
+    if (Math.abs(orbitWorld.x) < 2.6 && Math.abs(orbitWorld.z) < 5.4 && orbitWorld.y < 3.2) {
+      orbitWorld.x = Math.sign(orbitWorld.x || 1) * 2.6
+    }
+    car.frame.localToWorld(orbitWorld) // arabanın ekseninden dünyaya (takla yok: car.frame)
+    camera.position.copy(orbitWorld)
+    lookWorld.copy(orbit.target)
+    camera.lookAt(car.frame.localToWorld(lookWorld))
+    camera.fov += ((camera.aspect < 1 ? 60 : 45) - camera.fov) * ease
+    camera.updateProjectionMatrix()
   }
 
   // Vitrin: arabanın çevresinde daire (yatay açı zamanla artar), yükseklik hafifçe nefes alır
@@ -80,6 +145,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   // dt: GERÇEK zaman. Kamera ağır çekimden etkilenmesin (yoksa geçiş de ağır çekimde yavaşlar)
   function update(dt) {
     if (mode === 'showcase') return updateShowcase(dt)
+    if (mode === 'garage') return updateGarage(dt)
     if (!look.dragging) {
       const back = 1 - Math.exp(-1.5 * dt)
       look.yaw -= look.yaw * back
@@ -133,6 +199,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   return {
     update,
     setMode,
+    focusSlot,
     get mode() {
       return mode
     },
