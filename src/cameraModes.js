@@ -39,6 +39,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   // Kameranın arabaya göre şu anki yörüngesi (arabanın ekseninde). Geçişte KONUM değil bu değerler kayar:
   // kamera arabanın etrafında dönerek yeni odağa gider, düz çizgide gövdenin içinden geçmez
   const orbit = { yaw: 0, radius: 11, height: 2.4, target: new THREE.Vector3(0, 1.4, 0) }
+  const impulse = { time: 0, duration: 1, strength: 0 } // dışarıdan gelen kısa sarsıntı (ör. yakın geçen meteor)
   const goalTarget = new THREE.Vector3()
   const orbitWorld = new THREE.Vector3()
   const lookWorld = new THREE.Vector3()
@@ -142,10 +143,32 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
     camera.updateProjectionMatrix()
   }
 
+  // Kısa sarsıntı başlat. strength: en büyük açı (radyan), duration: süre (sn). Daha güçlüsü gelirse onu al
+  function shake(strength, duration) {
+    if (impulse.time > 0 && impulse.strength * (impulse.time / impulse.duration) > strength) return
+    Object.assign(impulse, { time: duration, duration, strength })
+  }
+
+  // Sarsıntı: kameranın KONUMUNU değil açısını çok az titret. Açı her karede lookAt ile yeniden hesaplandığı
+  // için titreşim birikmez, kamera yolundan sapmaz; azalarak söner
+  function applyShake(dt) {
+    if (impulse.time <= 0) return
+    impulse.time -= dt
+    const k = impulse.strength * Math.max(0, impulse.time / impulse.duration)
+    camera.rotateX((Math.random() - 0.5) * 2 * k)
+    camera.rotateY((Math.random() - 0.5) * 2 * k)
+  }
+
   // dt: GERÇEK zaman. Kamera ağır çekimden etkilenmesin (yoksa geçiş de ağır çekimde yavaşlar)
   function update(dt) {
-    if (mode === 'showcase') return updateShowcase(dt)
-    if (mode === 'garage') return updateGarage(dt)
+    if (mode === 'showcase') updateShowcase(dt)
+    else if (mode === 'garage') updateGarage(dt)
+    else updateFollow(dt)
+    applyShake(dt)
+  }
+
+  // Takip ve düşüş kamerası
+  function updateFollow(dt) {
     if (!look.dragging) {
       const back = 1 - Math.exp(-1.5 * dt)
       look.yaw -= look.yaw * back
@@ -200,6 +223,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
     update,
     setMode,
     focusSlot,
+    shake,
     get mode() {
       return mode
     },

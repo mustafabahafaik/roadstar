@@ -184,8 +184,9 @@ function createSaturn(cfg, rand) {
   }
 }
 
-// Pürüzlü kaya: ikosahedronun köşelerini rastgele itip çek (aynı köşe hep aynı miktar: dikiş yeri açılmasın)
-function createRockGeometry(rand) {
+// Pürüzlü kaya: ikosahedronun köşelerini rastgele itip çek (aynı köşe hep aynı miktar: dikiş yeri açılmasın).
+// rand: tohumlu ya da Math.random (meteors.js: her meteor farklı olsun)
+export function createRockGeometry(rand) {
   const geometry = new THREE.IcosahedronGeometry(1, 1)
   const pos = geometry.attributes.position
   const offsets = new Map()

@@ -23,6 +23,7 @@ import { createGarage } from './garage.js'
 import { DEFAULT_LOADOUT, applyLoadout } from './parts.js'
 import { createWorld } from './world.js'
 import { DEFAULT_MAP } from './maps.js'
+import { createMeteors } from './meteors.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -196,6 +197,16 @@ const cameraModes = createCameraModes({
   isOrbitEnabled: () => controls.enabled,
 })
 
+// Kayan yıldızlar ve meteorlar (meteors.js, SADECE GÖRSEL): sadece haritanın "meteors" ayarı varsa (Satürn)
+const meteors = createMeteors({
+  scene,
+  camera,
+  smoke,
+  getFocus: () => car.model.position,
+  getMap: () => world.map,
+  shake: (strength, duration) => cameraModes.shake(strength, duration),
+})
+
 // Düşüş sahnesi (fall.js): ağır çekim, yan kamera, dönüş, kesik duman, vignette, kalkan cezası
 const fall = createFall({
   car,
@@ -261,6 +272,7 @@ function simulate(realDelta) {
   const delta = realDelta * fall.timeScale
 
   world.update(delta) // dalgalar, bulutlar ya da dönen Satürn ve süzülen asteroitler
+  meteors.update(delta) // oyun zamanı: düşüşteki ağır çekimde meteorlar da yavaşlar
 
   car.update(delta)
   tricks.update(delta) // car.update'ten sonra: inişi yakalar, sonraki karenin takla dönüşünü hazırlar

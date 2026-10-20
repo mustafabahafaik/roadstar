@@ -41,6 +41,8 @@ export const MAPS = {
     saturn: { distance: 5600, radius: 1050, direction: [0.49, 0.21, -0.85], tilt: 0.42, spin: 0.015 },
     stars: { count: 7000 },
     asteroids: { count: 420 },
+    // Kayan yıldızlar ve meteorlar (meteors.js, SADECE GÖRSEL): aralıklar saniye [en az, en çok]
+    meteors: { starEvery: [2, 6], meteorEvery: [15, 25], saturnPassChance: 0.3 },
     track: { edgeTop: 0xb36bff, edgeBottom: 0xff8a2a, asphalt: 0xb7a6ff, steel: 0x1c1430 },
     obstacles: 'asteroid', // kule ve tırlar asteroit olarak çizilir (çarpışma kutuları AYNI)
   },
