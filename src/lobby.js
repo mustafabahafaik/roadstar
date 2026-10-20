@@ -4,6 +4,7 @@ import { MIN_PLAYERS, MAX_PLAYERS, ownershipMessage } from '../shared/protocol.j
 import { SERVER_URL } from './net.js'
 import { ENTRY_FEE, parseRoomCreated } from './chain.js'
 import { escapeHtml, toCssColor } from './html.js'
+import { getMap } from './maps.js'
 
 const NAME_KEY = 'monad-racer-name' // takma ad bir sonraki açılışta hatırlansın
 
@@ -27,7 +28,8 @@ const mon = (wei) => `${Number(formatEther(wei))} MON`
 // Lobi ekranı: sunucuya bağlan → takma ad + oda → oyuncu listesi + (ücretli oda: yatır) + "Hazırım".
 // Yarışı sunucu başlatır ('start' olayını race.js dinler). onSolo: sunucusuz tek kişilik yarış.
 // onBack: "← Ana sayfa". Router ekrana getirince show(), giderken hide() çağırır (race.js)
-export function createLobby({ net, chain, getLoadout, onSolo, onBack }) {
+// getMapId: giriş sayfasında seçilen harita. Odayı ilk kuran seçer, sonra gelenler odanın haritasında yarışır
+export function createLobby({ net, chain, getLoadout, getMapId, onSolo, onBack }) {
   const params = new URLSearchParams(window.location.search)
   const el = document.createElement('div')
   el.className = 'race-lobby'
@@ -121,7 +123,7 @@ export function createLobby({ net, chain, getLoadout, onSolo, onBack }) {
       // "Bu adres benim" kanıtı: sunucunun verdiği bağlantı numarasını (socket.id) burner anahtarla imzala
       const proof = await chain.signMessage(ownershipMessage(net.id))
       // loadout: garaj parçaları (sadece görsel): rakipler arabamızı bu parçalarla görür
-      const res = await net.join(name, roomInput.value, { address: chain.address, proof, loadout: getLoadout() })
+      const res = await net.join(name, roomInput.value, { address: chain.address, proof, loadout: getLoadout(), map: getMapId() })
       if (!res.ok) throw new Error(res.error)
       joined = true
       saveName(name)
@@ -195,7 +197,7 @@ export function createLobby({ net, chain, getLoadout, onSolo, onBack }) {
     const paid = room.chain // ücretli oda mı (zincir odası bağlandı mı)
     const capacity = paid ? room.chain.maxPlayers : MAX_PLAYERS
     $('.lobby-room-name').textContent = room.id
-    $('.lobby-count').textContent = `${room.players.length}/${capacity}${paid ? ` · ${mon(room.chain.entryFee)} giriş` : ''}`
+    $('.lobby-count').textContent = `${room.players.length}/${capacity} · ${getMap(room.map).name}${paid ? ` · ${mon(room.chain.entryFee)} giriş` : ''}`
     $('.lobby-players').innerHTML = room.players
       .map((p) => {
         const state = p.ready ? ['lobby-ok', 'HAZIR'] : paid && !p.paid ? ['lobby-wait', 'ödeme bekleniyor'] : ['lobby-wait', 'bekliyor']

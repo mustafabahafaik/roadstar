@@ -9,6 +9,7 @@ import { buildCourse } from '../src/course.js'
 import { rampSurfaceIn } from '../src/ramps.js'
 import { SEND_RATE, POOL_GAS_LIMITS, ownershipMessage } from '../shared/protocol.js'
 import { SLOTS, partsInSlot } from '../src/parts.js'
+import { getMap } from '../src/maps.js'
 
 // --- Sürüş ayarları ---
 const TOP_SPEED = 66 // insanın azami hızı 70 (boost'la 140): iyi süren insan botu geçebilsin
@@ -24,6 +25,7 @@ const MISTAKE_RATE = 0.06 // saniyede hata olasılığı (yarış başına ~3)
 const FUN_JUMP_RATE = 0.03 // saniyede "boş yolda gösteriş zıplaması" olasılığı
 const TRICK_CHANCE = 0.4 // uzun bir uçuşta takla atma olasılığı
 const START_REACTION = [0, 0.4] // "BAŞLA"ya tepki süresi (sn)
+const WALL_CLEARANCE = 1.2 // duvarın üstünden en az bu kadar yüksek geç
 const FORM_RANGE = [0.92, 1.0] // botun o yarışki formu: azami hızı bununla çarpılır (her yarış farklı sıralama)
 
 const POOL_ABI = [
@@ -47,13 +49,15 @@ const UP = new THREE.Vector3(0, 1, 0)
 const AXIS_X = new THREE.Vector3(1, 0, 0)
 const AXIS_Z = new THREE.Vector3(0, 0, 1)
 
-// Bir yarışlık sürücü: seed'den parkuru kurar (oyunla birebir aynı), her adımda yeni durumu hesaplar
-function createDriver(seed, topSpeed) {
+// Bir yarışlık sürücü: seed'den parkuru kurar (oyunla birebir aynı), her adımda yeni durumu hesaplar.
+// gravityScale: haritanın yerçekimi (Satürn 0.6): zıplama zamanlaması ve uçuş süresi buna göre
+export function createDriver(seed, topSpeed, gravityScale = 1) {
+  const gravity = GRAVITY * gravityScale
   topSpeed *= rand(...FORM_RANGE) // bugün formda mı?
   const course = buildCourse(seed)
   // Kopyala: buildCourse ortak bir nesneyi günceller, başka odadaki bot onu değiştirebilir
   const ramps = course.ramps
-  const obstacles = course.obstacles.map((o) => ({ along: o.u * trackLength, type: o.type, center: o.offset * (TRACK_WIDTH / 2) }))
+  const obstacles = course.obstacles.map((o) => ({ along: o.u * trackLength, type: o.type, center: o.offset * (TRACK_WIDTH / 2), height: o.height ?? 0 }))
 
   const s = {
     distance: 0,
@@ -75,10 +79,17 @@ function createDriver(seed, topSpeed) {
   const side = new THREE.Vector3()
   const look = new THREE.Vector3()
 
+  // Duvarın üstünden geçmek için şu an gereken dikey hız. Duvara varış süresi t = mesafe / hız;
+  // yukarı atış: h + v·t − ½·g·t² ≥ duvar + pay  →  v ≥ (duvar + pay − h + ½·g·t²) / t
+  function neededVy(wall, distance) {
+    const t = distance / Math.max(s.speed, 1)
+    return (wall.height + WALL_CLEARANCE - s.height + 0.5 * gravity * t * t) / t
+  }
+
   function takeOff(vy) {
     s.airborne = true
     s.vy = vy
-    const airtime = (2 * vy) / GRAVITY
+    const airtime = (2 * vy) / gravity
     if (airtime > 1.2 && Math.random() < TRICK_CHANCE) {
       // Takla: öne (X ekseni) ya da yana (Z ekseni) tam tur, inişten önce bitsin
       s.flip = { axis: Math.random() < 0.6 ? AXIS_X : AXIS_Z, dir: Math.random() < 0.5 ? -1 : 1, time: 0, duration: airtime * 0.75 }
@@ -100,8 +111,8 @@ function createDriver(seed, topSpeed) {
     if (ahead) {
       const gap = ahead.along - s.distance
       if (ahead.type === 'wall') {
-        // Duvar tüm yolu kaplar: tepe noktası duvarın üstüne denk gelecek şekilde zıpla
-        if (!s.airborne && gap > 0 && gap < s.speed * (JUMP_VELOCITY / GRAVITY) + 2) takeOff(JUMP_VELOCITY)
+        // Duvar tüm yolu kaplar: tepe noktası duvarın üstüne denk gelecek şekilde zıpla (geç kaldıysa daha sert)
+        if (!s.airborne && gap > 0 && gap < s.speed * (JUMP_VELOCITY / gravity) + 2) takeOff(Math.max(JUMP_VELOCITY, neededVy(ahead, gap)))
       } else {
         laneTarget = -Math.sign(ahead.center) * LANE // kule / tır bir şeritte: karşı şeride geç
       }
@@ -118,7 +129,11 @@ function createDriver(seed, topSpeed) {
       s.mistake.time -= dt
       if (s.mistake.time <= 0) s.mistake = null
     }
-    if (!ahead && !s.airborne && Math.random() < FUN_JUMP_RATE * dt) takeOff(JUMP_VELOCITY) // gösteriş
+    // Gösteriş zıplaması: inişi bir duvara denk gelmesin (düşük yerçekiminde uçuş 3 sn'yi geçer)
+    const nextWall = obstacles.find((o) => o.type === 'wall' && o.along > s.distance - 2)
+    const flight = ((2 * JUMP_VELOCITY) / gravity) * s.speed + 30
+    const wallInFlight = nextWall && nextWall.along - s.distance < flight
+    if (!ahead && !wallInFlight && !s.airborne && Math.random() < FUN_JUMP_RATE * dt) takeOff(JUMP_VELOCITY)
 
     // 4) Hız: hızlanırken araba gibi (ivmeyle), yavaşlarken yumuşak
     if (s.speed < target) s.speed = Math.min(target, s.speed + ACCELERATION * dt)
@@ -136,7 +151,11 @@ function createDriver(seed, topSpeed) {
     // 7) Dikey: rampa yüzeyi, rampanın ucundan fırlama, zıplama ve iniş
     const ground = rampSurfaceIn(ramps, u, s.offset)
     if (s.airborne) {
-      s.vy -= GRAVITY * dt
+      s.vy -= gravity * dt
+      // Havadayken duvar yaklaşıyor ve bu hızla altından geçecektik (önceki uçuşun inişi duvara denk geldi):
+      // insanın Space'e basılı tutması gibi roketle yüksel: dikey hızı tam yetecek kadar artır
+      const toWall = nextWall ? nextWall.along - s.distance : Infinity
+      if (toWall > 0 && toWall < 45) s.vy = Math.max(s.vy, neededVy(nextWall, toWall))
       s.height += s.vy * dt
       if (s.flip) s.flip.time += dt
       if (s.vy < 0 && s.height <= ground.height) {
@@ -259,8 +278,8 @@ export function createBotPilot({ serverUrl, room, name, key, provider, poolAddre
     if (!me.ready && (!r.chain || me.paid)) socket.emit('ready', true)
   }
 
-  function onStart({ seed, startAt }) {
-    const driver = createDriver(seed, topSpeed)
+  function onStart({ seed, startAt, map }) {
+    const driver = createDriver(seed, topSpeed, getMap(map).gravity)
     const reactAt = startAt + rand(...START_REACTION) * 1000
     let last = 0
     clearInterval(timer)

@@ -1,8 +1,6 @@
 import './style.css'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { Sky } from 'three/addons/objects/Sky.js'
-import { Water } from 'three/addons/objects/Water.js'
 import { createPostFX } from './postfx.js'
 import { quality } from './settings.js'
 import { createTrack } from './track.js'
@@ -23,6 +21,8 @@ import { createRouter } from './router.js'
 import { createLanding } from './landing.js'
 import { createGarage } from './garage.js'
 import { DEFAULT_LOADOUT, applyLoadout } from './parts.js'
+import { createWorld } from './world.js'
+import { DEFAULT_MAP } from './maps.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -51,84 +51,15 @@ renderer.shadowMap.type = THREE.PCFShadowMap // kenarları yumuşatılmış göl
 renderer.shadowMap.autoUpdate = false // her karede bir kez, postfx.js içinde güncelliyoruz
 document.body.appendChild(renderer.domElement)
 
-// --- 4. Güneş yönü: Sky ve Water aynı vektörü kullanır ---
-// setFromSphericalCoords(yarıçap, tepeden açı, yatay açı) → x, y, z vektörü
-const sun = new THREE.Vector3()
-const elevation = 20 // güneşin ufuktan yüksekliği (derece)
-const azimuth = 135 // güneşin yatay yönü (derece)
-const phi = THREE.MathUtils.degToRad(90 - elevation)
-const theta = THREE.MathUtils.degToRad(azimuth)
-sun.setFromSphericalCoords(1, phi, theta)
-
-// --- 5. Gökyüzü: dev bir kutunun içini shader ile boyar ---
-// uniform = shader'a JavaScript'ten gönderdiğimiz ayar değeri
-const sky = new Sky()
-sky.scale.setScalar(10000)
-scene.add(sky)
-
-const skyUniforms = sky.material.uniforms
-skyUniforms.turbidity.value = 10 // havadaki pus
-skyUniforms.rayleigh.value = 2 // mavi saçılma (gökyüzünün mavisi)
-skyUniforms.mieCoefficient.value = 0.005 // güneş etrafındaki hale
-skyUniforms.mieDirectionalG.value = 0.8
-skyUniforms.sunPosition.value.copy(sun)
-
-// Ortam haritası (environment map): gökyüzünün bir "fotoğrafını" çekip tüm metal/parlak
-// yüzeylere yansıma olarak veriyoruz. PMREM bu fotoğrafı pürüzlülüğe göre bulanıklaştırır.
-const pmrem = new THREE.PMREMGenerator(renderer)
-const envScene = new THREE.Scene()
-envScene.add(sky) // geçici olarak ayrı sahneye al, sadece gökyüzünü çek
-scene.environment = pmrem.fromScene(envScene).texture
-scene.environmentIntensity = 0.25 // gökyüzünün ham değerleri çok parlak, yansımayı kıs
-scene.add(sky) // gökyüzünü asıl sahneye geri koy
-
-// --- 6. Su: gökyüzünü yansıtan, normal map ile dalgalanan düzlem ---
-const waterNormals = new THREE.TextureLoader().load(
-  '/textures/waternormals.jpg',
-  (texture) => {
-    // Doku 10000 birimlik düzlemde tekrar tekrar döşensin
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping
-  },
-  undefined,
-  () => console.warn('waternormals.jpg bulunamadı → public/textures/ içine koy'),
-)
-
-const water = new Water(new THREE.PlaneGeometry(10000, 10000), {
-  textureWidth: quality.waterResolution, // yansıma dokusu (settings.js)
-  textureHeight: quality.waterResolution,
-  waterNormals,
-  sunDirection: sun.clone(),
-  sunColor: 0xffffff,
-  waterColor: 0x00557a,
-  distortionScale: 3.7, // dalga yansımalarının ne kadar bozulacağı
-})
-water.rotation.x = -Math.PI / 2 // düzlem dikey gelir, yere yatır
-scene.add(water)
-
-// Işıklar: MeshStandardMaterial kullanan tır ve engel gövdeleri için.
-// HemisphereLight üstten gök rengi, alttan deniz rengi verir; DirectionalLight güneşin kendisi
-scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x0b3a55, 0.5)) // ortam haritası da ışık verdiği için düşük
-const sunLight = new THREE.DirectionalLight(0xfff2e0, 1.8) // hafif sıcak güneş rengi
-sunLight.castShadow = true
-sunLight.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize) // gölge fotoğrafının çözünürlüğü
-sunLight.shadow.radius = 3 // gölge kenarı yumuşaklığı
-sunLight.shadow.bias = -0.0004 // "gölge sivilcesi" (shadow acne) denen çizgili hatayı önler
-sunLight.shadow.normalBias = 0.04
-// Gölge kamerası arabanın etrafındaki 80×80'lik alanı kapsar; tüm pisti kapsasaydı gölgeler bulanık olurdu
-const shadowCam = sunLight.shadow.camera
-shadowCam.left = shadowCam.bottom = -40
-shadowCam.right = shadowCam.top = 40
-shadowCam.near = 1
-shadowCam.far = 400
-scene.add(sunLight)
-scene.add(sunLight.target) // ışığın baktığı nokta; arabayı takip edecek
-
-// Hafif sis: uzaktaki nesneler havanın rengine karışır (atmosfer derinliği hissi)
-scene.fog = new THREE.FogExp2(0xc4d6e4, 0.0006)
+// --- 4-6. Gökyüzü, su / uzay, ışıklar, sis: haritaya göre world.js kurar (maps.js ayar objeleri) ---
 
 // --- 7. Pist: gökyüzünde kıvrılan neon rota (track.js) ---
 const track = createTrack()
 scene.add(track)
+
+// Dünya (world.js): seçili haritanın gökyüzü, ışığı, sisi, arka plan nesneleri ve pist renkleri.
+// Giriş sayfası haritayı seçince, yarış başlarken (sunucunun haritası) değişir
+const world = createWorld({ scene, renderer, track })
 
 // Engeller ve rampalar artık burada değil: seed gelince race.js kurar (course.js)
 
@@ -187,6 +118,7 @@ const net = createNet()
 
 // Ekranlar arası geçiş (router.js): giriş → garaj → lobi → yarış → sonuç → giriş
 const router = createRouter()
+let landing = null // giriş sayfası (aşağıda): seçili harita
 
 // Garaj parçaları (parts.js, SADECE GÖRSEL): zincirde takılı loadout. Garaj değiştirir, lobi odaya girerken gönderir
 let loadout = [...DEFAULT_LOADOUT]
@@ -205,6 +137,8 @@ const race = createRace({
   gameState,
   net,
   router,
+  world,
+  getMapId: () => landing?.map ?? DEFAULT_MAP,
   getLoadout: () => loadout,
   getScore: () => tricks.score,
   showMessage,
@@ -274,7 +208,7 @@ const fall = createFall({
 })
 
 // Giriş sayfası (landing.js) ve garaj (garage.js): arkada araba vitrin kamerasında döner
-createLanding({ router, chain, cameraModes })
+landing = createLanding({ router, chain, cameraModes, world })
 createGarage({ router, cameraModes, chain, car, boost, getEquipped: () => loadout, setEquipped: setLoadout })
 
 // Açılışta: zincirdeki parçalarını arabaya uygula (garaja girmesen de yarışa kendi parçalarınla çıkarsın)
@@ -289,13 +223,8 @@ router.start() // ilk ekran: adresteki (#/ giriş, #/garaj, #/lobi)
 
 // --- 9. Post-processing: seçici bloom + kenar yumuşatma (postfx.js) ---
 // Gökyüzü ve su bloom geçişinde gizlenir → güneşe bakınca ekran artık beyaza boğulmaz
-const postfx = createPostFX(renderer, scene, camera, [sky, water], quality.msaa)
+const postfx = createPostFX(renderer, scene, camera, world.bloomHidden, quality.msaa) // gizlenecekler haritaya göre
 
-// Güneş ışığı ve gölge kamerası arabayla birlikte hareket eder
-function updateSunLight() {
-  sunLight.target.position.copy(car.model.position)
-  sunLight.position.copy(car.model.position).addScaledVector(sun, 150)
-}
 
 // --- 10. Pencere boyutu değişince güncelle ---
 window.addEventListener('resize', () => {
@@ -321,7 +250,7 @@ renderer.setAnimationLoop((time) => {
   timer.update(time)
   // 0 → ilk karede negatif çıkabiliyor, 0.05 → sekme değişince dev bir sıçrama olmasın
   simulate(THREE.MathUtils.clamp(timer.getDelta(), 0, 0.05))
-  updateSunLight()
+  world.followSun(car.model.position) // güneş ışığı ve gölge kamerası arabayla birlikte hareket eder
   postfx.render() // renderer.render yerine: efektlerle birlikte çiz
 })
 
@@ -331,8 +260,7 @@ function simulate(realDelta) {
   // aynı oranda yavaşlar, hiçbir sistemin "ağır çekim var mı?" diye bilmesi gerekmez
   const delta = realDelta * fall.timeScale
 
-  water.material.uniforms.time.value += delta // dalgaları ilerlet
-  skyUniforms.time.value += delta * 1000 // bulutları kaydır (ms)
+  world.update(delta) // dalgalar, bulutlar ya da dönen Satürn ve süzülen asteroitler
 
   car.update(delta)
   tricks.update(delta) // car.update'ten sonra: inişi yakalar, sonraki karenin takla dönüşünü hazırlar

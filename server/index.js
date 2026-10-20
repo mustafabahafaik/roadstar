@@ -22,6 +22,7 @@ import {
 import { createPool, verifyOwnership } from './pool.js'
 import { createBotManager } from './bots.js'
 import { sanitizeLoadout } from '../src/parts.js'
+import { isMapId, DEFAULT_MAP } from '../src/maps.js'
 
 // server/.env → process.env (RESULT_SIGNER_KEY, POOL_ADDRESS...). Dosya yoksa ücretli oda kapalı çalışır
 try {
@@ -100,7 +101,7 @@ const cleanRoom = (text) =>
 
 function getRoom(id) {
   if (!rooms.has(id)) {
-    rooms.set(id, { id, status: 'lobby', seed: null, startAt: 0, players: new Map(), chain: null, creating: null, autoStartAt: 0, botFillAt: 0 })
+    rooms.set(id, { id, status: 'lobby', seed: null, startAt: 0, players: new Map(), chain: null, creating: null, autoStartAt: 0, botFillAt: 0, map: null })
   }
   return rooms.get(id)
 }
@@ -146,6 +147,7 @@ function publicRoom(room) {
   return {
     id: room.id,
     status: room.status,
+    map: room.map, // odanın haritası (maps.js): ilk giren seçer
     chain: room.chain,
     creating: Boolean(room.creating),
     autoStartAt: room.autoStartAt,
@@ -229,8 +231,9 @@ async function maybeStart(room) {
     p.finishMs = null
   }
   const paid = room.chain ? ` · ücretli oda #${room.chain.roomId}` : ''
-  console.log(`[${room.id}] yarış başlıyor: ${players.map((p) => p.name).join(', ')} · seed ${room.seed.slice(0, 10)}…${paid}`)
-  io.to(room.id).emit('start', { seed: room.seed, startAt: room.startAt })
+  console.log(`[${room.id}] yarış başlıyor: ${players.map((p) => p.name).join(', ')} · ${room.map} · seed ${room.seed.slice(0, 10)}…${paid}`)
+  // Seed + harita birlikte: herkes aynı parkuru aynı haritada (gökyüzü, yerçekimi, engel görünüşü) kurar
+  io.to(room.id).emit('start', { seed: room.seed, startAt: room.startAt, map: room.map })
   broadcastRoom(room)
 }
 
@@ -320,7 +323,8 @@ io.on('connection', (socket) => {
   // botToken: sadece sunucunun kendi botları bilir (bots.js). Lobide "BOT" rozeti buna göre
   // loadout: garaj parçaları. Sadece görsel olduğu için sahiplik zincirden doğrulanmıyor; katalogda olmayan
   // ya da yanlış slottaki id varsayılana döner (sanitizeLoadout). Hız / çarpışma hesabı parçalara hiç bakmaz
-  socket.on('join', ({ name, room: roomId, address, proof, botToken, loadout } = {}, ack = () => {}) => {
+  // map: oyuncunun giriş sayfasında seçtiği harita. Oda BOŞSA odanın haritası olur; doluysa odanınki geçerli
+  socket.on('join', ({ name, room: roomId, address, proof, botToken, loadout, map } = {}, ack = () => {}) => {
     if (typeof ack !== 'function') return
     if (room) return ack({ ok: false, error: 'Zaten bir odadasın' })
     const target = getRoom(cleanRoom(roomId))
@@ -346,6 +350,7 @@ io.on('connection', (socket) => {
     const safeName = isBot ? cleanedName : cleanName(cleanedName.replace(/^\s*bot(\W+|$)/i, ''), 'Pilot', 16)
 
     room = target
+    if (!room.map || room.players.size === 0) room.map = isMapId(map) ? map : DEFAULT_MAP
     player = {
       id: socket.id,
       name: safeName,

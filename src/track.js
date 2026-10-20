@@ -137,12 +137,22 @@ function createStrip(a, b) {
   return geometry
 }
 
-// Kenar noktalarından ince neon boru üretir
-function createEdgeLine(edgePoints) {
+// Kenar noktalarından ince neon boru üretir. material: üst ya da alt kenarların ortak neon malzemesi
+function createEdgeLine(edgePoints, material) {
   const curve = new THREE.CatmullRomCurve3(edgePoints, true)
   const geometry = new THREE.TubeGeometry(curve, SEGMENTS, 0.35, 8, true)
-  // bloom: false → kenarlar ekranda çok uzun ve yakın, hâleleri tüm yolu turkuaza boyuyordu
-  return new THREE.Mesh(geometry, neon(0x00f0ff, 1.6, false))
+  return new THREE.Mesh(geometry, material)
+}
+
+const EDGE_INTENSITY = 1.6
+
+// Haritaya göre pisti boya (maps.js → track: { edgeTop, edgeBottom, asphalt, steel }). Şekil ve ölçü değişmez
+export function recolorTrack(group, colors) {
+  const m = group.userData.materials
+  m.edgeTop.color.set(colors.edgeTop).multiplyScalar(EDGE_INTENSITY)
+  m.edgeBottom.color.set(colors.edgeBottom).multiplyScalar(EDGE_INTENSITY)
+  m.asphalt.color.set(colors.asphalt) // dokuyla çarpılır: beyaz = doku olduğu gibi, mor = morumsu asfalt
+  m.steel.color.set(colors.steel)
 }
 
 export function createTrack() {
@@ -166,11 +176,15 @@ export function createTrack() {
   group.add(new THREE.Mesh(createStrip(right, rightBottom), steel)) // sağ duvar (dışa bakar)
   group.add(new THREE.Mesh(createStrip(rightBottom, leftBottom), steel)) // alt yüzey (aşağı bakar)
 
-  // Neon kenar çizgileri: üst kenarda ve alt kenarda
-  group.add(createEdgeLine(left))
-  group.add(createEdgeLine(right))
-  group.add(createEdgeLine(leftBottom))
-  group.add(createEdgeLine(rightBottom))
+  // Neon kenar çizgileri: üst kenarda ve alt kenarda (üst ve alt ayrı renk alabilsin: haritalar)
+  // bloom: false → kenarlar ekranda çok uzun ve yakın, hâleleri tüm yolu turkuaza boyuyordu
+  const edgeTop = neon(0x00f0ff, EDGE_INTENSITY, false)
+  const edgeBottom = neon(0x00f0ff, EDGE_INTENSITY, false)
+  group.add(createEdgeLine(left, edgeTop))
+  group.add(createEdgeLine(right, edgeTop))
+  group.add(createEdgeLine(leftBottom, edgeBottom))
+  group.add(createEdgeLine(rightBottom, edgeBottom))
 
+  group.userData.materials = { asphalt, steel, edgeTop, edgeBottom } // recolorTrack haritaya göre boyar
   return group
 }

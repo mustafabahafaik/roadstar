@@ -1,4 +1,5 @@
 import { MONAD_TESTNET } from './chain.js'
+import { MAP_LIST, isMapId } from './maps.js'
 
 // Giriş sayfası: arkada yavaşça dönen araba (kameranın 'showcase' modu), ROADSTAR başlığı, butonlar,
 // harita seçimi ve zincir istatistikleri. Cüzdan (adres, bakiye, faucet) sağ üstteki zincir panelinde (txHud.js)
@@ -6,10 +7,8 @@ import { MONAD_TESTNET } from './chain.js'
 const MAP_KEY = 'monad-racer:map'
 const LAST_RACE_KEY = 'monad-racer:last-race'
 
-export const MAPS = [
-  { id: 'neon-ocean', name: 'Neon Okyanus', info: 'Gökyüzünde kıvrılan neon pist, altında okyanus', ready: true },
-  { id: 'saturn', name: 'Satürn Yörüngesi', info: 'Halkaların arasında düşük yerçekimi', ready: false },
-]
+// Harita kartları maps.js'ten gelir: yeni harita = maps.js'e bir obje eklemek
+const MAPS = MAP_LIST
 
 // localStorage gizli pencerede / kapalıyken hata fırlatabilir: oyun yine de çalışsın
 const load = (key) => {
@@ -37,8 +36,11 @@ const loadLastRace = () => {
   }
 }
 
-export function createLanding({ router, chain, cameraModes }) {
-  let selected = MAPS.find((m) => m.id === load(MAP_KEY) && m.ready)?.id ?? MAPS[0].id
+// world: kart seçilince arka plan anında o haritaya döner (önizleme)
+export function createLanding({ router, chain, cameraModes, world }) {
+  const saved = load(MAP_KEY)
+  let selected = isMapId(saved) && MAPS.find((m) => m.id === saved).ready ? saved : MAPS[0].id
+  world.setMap(selected)
 
   const el = document.createElement('div')
   el.className = 'landing'
@@ -93,6 +95,7 @@ export function createLanding({ router, chain, cameraModes }) {
     card.addEventListener('click', () => {
       selected = card.dataset.map
       save(MAP_KEY, selected)
+      world.setMap(selected) // arkadaki sahne hemen değişsin
       renderMaps()
     })
   }
@@ -111,6 +114,7 @@ export function createLanding({ router, chain, cameraModes }) {
   router.register('landing', {
     enter() {
       el.hidden = false
+      world.setMap(selected) // lobiden dönünce (oda başka haritadaysa) bizim seçimimize dön
       cameraModes.setMode('showcase')
       refreshStats()
     },

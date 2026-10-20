@@ -4,6 +4,7 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { trackCurve, TRACK_WIDTH } from './track.js'
 import { createTruck } from './truck.js'
 import { TOWER_TOP_RATIO } from './course.js'
+import { createAsteroidObstacles } from './space.js'
 
 // Engel listesi artık course.js'te seed'den üretilir. Her engel bir veri satırı:
 // u      → turun neresinde (0 = başlangıç/bitiş, 0.5 = yarısı)
@@ -76,12 +77,16 @@ function createTower(width, height) {
   return group
 }
 
-// list: course.obstacles (seed'den üretilmiş engeller)
-export function createObstacles(list) {
+// list: course.obstacles (seed'den üretilmiş engeller). map: maps.js harita objesi (engellerin GÖRÜNÜŞÜ).
+// 'asteroid' haritasında kule ve tırlar asteroit olarak çizilir; yerleri ve çarpışma kutuları (course.js) aynı
+export function createObstacles(list, map) {
   const group = new THREE.Group()
   const up = new THREE.Vector3(0, 1, 0)
+  const asteroids = map?.obstacles === 'asteroid'
+  if (asteroids) group.add(createAsteroidObstacles(list)) // tek InstancedMesh: bütün kayalar tek çizim
 
   for (const o of list) {
+    if (asteroids && o.type !== 'wall') continue // bu engel zaten kaya olarak çizildi
     const center = trackCurve.getPointAt(o.u)
     const tangent = trackCurve.getTangentAt(o.u)
     const side = new THREE.Vector3().crossVectors(tangent, up).normalize()

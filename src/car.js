@@ -72,6 +72,9 @@ export function createCar(scene, smoke, events = {}) {
     wobble: 0, // kötü inişte sarsılma süresi (saniye)
   }
   let thrustPower = 0 // roketlerin gücü (0 → 1), görsel efektler için
+  // Harita yerçekimi çarpanı (maps.js: okyanus 1, Satürn 0.6). Zıplama hızı aynı → daha yüksek ve uzun uçuş.
+  // Hız sınırı, ivme ve çarpışma kutusu yerçekiminden bağımsız (sunucunun hile kontrolü de)
+  let gravityScale = 1
   let roll = 0 // yana yatma açısı (radyan)
   let pitch = 0 // burun yukarı/aşağı açısı (radyan)
   let crashBackSpeed = 0 // çarpınca geriye sekme hızı
@@ -171,7 +174,7 @@ export function createCar(scene, smoke, events = {}) {
     const hovering = !onGround && controls.jump && state.fuel > 0
     if (hovering) state.fuel = Math.max(0, state.fuel - FUEL_USE * dt)
     else if (onGround) state.fuel = Math.min(1, state.fuel + FUEL_REGEN * dt)
-    applyGravity(dt, hovering ? HOVER_GRAVITY : GRAVITY)
+    applyGravity(dt, (hovering ? HOVER_GRAVITY : GRAVITY) * gravityScale)
 
     // Roket gücü: yerdeyken söner, havada Space basılıysa tam, değilse yarım
     const targetPower = state.onGround ? 0 : hovering ? 1 : 0.35
@@ -212,7 +215,7 @@ export function createCar(scene, smoke, events = {}) {
     state.crashTime += dt
     crashBackSpeed *= 1 - Math.min(1, 2.5 * dt) // geri sekme yavaşça durur
     moveAlongTrack(crashBackSpeed * dt)
-    applyGravity(dt, GRAVITY)
+    applyGravity(dt, GRAVITY * gravityScale)
     if (state.falling) state.fallTime += dt
     if (state.crashTime > CRASH_TIME) respawn(CRASH_RESPAWN_BACK)
   }
@@ -316,6 +319,7 @@ export function createCar(scene, smoke, events = {}) {
     model,
     frame,
     thrusters, // garaj: alev rengi ve önizleme (parts.js)
+    setGravityScale: (scale) => (gravityScale = scale), // race.js: yarış başlarken haritaya göre
     state,
     velocity,
     update,

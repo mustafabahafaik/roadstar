@@ -13,6 +13,7 @@ import { createLobby } from './lobby.js'
 import { createRemotePlayers } from './remotePlayers.js'
 import { escapeHtml, toCssColor } from './html.js'
 import { saveLastRace } from './landing.js'
+import { getMap } from './maps.js'
 
 // Yarış akışı: lobi → geri sayım → yarış → bitiş kapısı (finished) ya da dnf.
 // Çok oyunculu: seed'i ve başlangıç ANINI sunucu verir (herkes aynı parkurda, aynı anda başlar).
@@ -103,7 +104,8 @@ function enableShadows(group) {
 // getScore: takla skoru (sonuç ekranı için). showMessage / holdMessage: ekran yazısı
 // router: ekran geçişleri (router.js) — lobi, yarış ve sonuç ekranlarını burada kaydederiz
 // getLoadout: garaj parçaları (odaya girerken sunucuya gider, rakipler arabamızı böyle görür)
-export function createRace({ scene, car, chain, gameState, net, router, getLoadout, onCourse, getScore, showMessage, holdMessage }) {
+// world: harita değişimi (world.js). getMapId: giriş sayfasında seçilen harita (tek başına yarış + odaya katılırken)
+export function createRace({ scene, car, chain, gameState, net, router, world, getMapId, getLoadout, onCourse, getScore, showMessage, holdMessage }) {
   const race = { id: null, seed: null, onChain: false } // zincirdeki yarış numarası ve token seed'i
   let items = null
   let multiplayer = false
@@ -170,12 +172,14 @@ export function createRace({ scene, car, chain, gameState, net, router, getLoado
     net,
     chain,
     getLoadout,
+    getMapId,
     onSolo: () =>
       beginCountdown({
         // ?seed=123 verilirse hep aynı parkur (deneme için), yoksa rastgele 32 bayt
         seed: new URLSearchParams(window.location.search).get('seed') ?? hexlify(randomBytes(32)),
         startAt: net.serverNow() + COUNTDOWN_MS,
         multiplayer: false,
+        map: getMapId(),
       }),
     onBack: () => router.go('landing'),
   })
@@ -196,9 +200,12 @@ export function createRace({ scene, car, chain, gameState, net, router, getLoado
   net.on('room', (r) => {
     room = r
     lobby.render(r)
+    // Lobideyken arka plan odanın haritası olsun: herkes katılınca hangi haritada yarışacağını görür
+    if (router.current === 'lobby' && r.map) world.setMap(r.map)
     remote.syncRoom(r.players, net.id) // yeni gelene araba ekle, gideni çıkar
   })
-  net.on('start', ({ seed, startAt: at }) => beginCountdown({ seed, startAt: at, multiplayer: true }))
+  // Sunucu seed ile birlikte haritayı da gönderir: odadaki herkes aynı parkuru AYNI haritada görür
+  net.on('start', ({ seed, startAt: at, map }) => beginCountdown({ seed, startAt: at, multiplayer: true, map }))
   net.on('snapshot', (snapshot) => remote.onSnapshot(snapshot))
   net.on('results', ({ standings, settlement: signed }) => {
     finalStandings = standings
@@ -210,7 +217,7 @@ export function createRace({ scene, car, chain, gameState, net, router, getLoado
   })
 
   // --- Geri sayım: parkuru kur, startAt anını bekle (update içinde) ---
-  function beginCountdown({ seed, startAt: at, multiplayer: mp }) {
+  function beginCountdown({ seed, startAt: at, multiplayer: mp, map: mapId }) {
     if (!gameState.set(GAME_STATE.COUNTDOWN)) return
     router.go('race')
     lobby.remove()
@@ -220,8 +227,13 @@ export function createRace({ scene, car, chain, gameState, net, router, getLoado
     paidRace = multiplayer && Boolean(room?.chain)
 
     // Parkuru seed'den kur ve sahneye ekle (engeller + rampalar)
+    // Harita: gökyüzü, ışık, pist renkleri (world), yerçekimi (car) ve engellerin görünüşü. Parkur seed'den: aynı
+    const map = getMap(mapId)
+    world.setMap(map.id)
+    car.setGravityScale(map.gravity)
+
     const course = buildCourse(seed)
-    for (const group of [createObstacles(course.obstacles), createRamps(course.ramps)]) {
+    for (const group of [createObstacles(course.obstacles, map), createRamps(course.ramps)]) {
       enableShadows(group)
       scene.add(group)
     }
