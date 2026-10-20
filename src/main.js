@@ -19,6 +19,9 @@ import { createTxHud } from './txHud.js'
 import { isTyping } from './input.js'
 import { createRace } from './race.js'
 import { createNet } from './net.js'
+import { createRouter } from './router.js'
+import { createLanding } from './landing.js'
+import { createGarage } from './garage.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -181,6 +184,9 @@ txHud = createTxHud(() => chain)
 // Çok oyunculu sunucu bağlantısı (net.js): odalar, saat eşitleme, durum gönderme. Adres .env → VITE_SERVER_URL
 const net = createNet()
 
+// Ekranlar arası geçiş (router.js): giriş → garaj → lobi → yarış → sonuç → giriş
+const router = createRouter()
+
 // Yarış akışı (race.js): lobi → geri sayım (sunucunun başlangıç anı) → yarış → bitiş / DNF + sonuç ekranı.
 // Seed gelince parkuru race.js kurar, tokenları burada oluşturuyoruz (boost ve zincirle konuşuyorlar)
 let items = null
@@ -190,6 +196,7 @@ const race = createRace({
   chain,
   gameState,
   net,
+  router,
   getScore: () => tricks.score,
   showMessage,
   holdMessage,
@@ -257,6 +264,11 @@ const fall = createFall({
   onMessage: (text) => showMessage(text),
 })
 
+// Giriş sayfası (landing.js) ve garaj (garage.js): arkada araba vitrin kamerasında döner
+createLanding({ router, chain, cameraModes })
+createGarage({ router, cameraModes })
+router.start() // ilk ekran: adresteki (#/ giriş, #/garaj, #/lobi)
+
 // --- 9. Post-processing: seçici bloom + kenar yumuşatma (postfx.js) ---
 // Gökyüzü ve su bloom geçişinde gizlenir → güneşe bakınca ekran artık beyaza boğulmaz
 const postfx = createPostFX(renderer, scene, camera, [sky, water], quality.msaa)
@@ -278,11 +290,14 @@ window.addEventListener('resize', () => {
 // --- 11. Animasyon döngüsü ---
 const timer = new THREE.Timer()
 
-// FPS sınırı: 120-144 Hz ekranlarda saniyede 144 kare yerine en fazla maxFps kare çiz → ekran kartı daha az ısınır
-const minFrameTime = 1000 / quality.maxFps
+// FPS sınırı: 120-144 Hz ekranlarda saniyede 144 kare yerine en fazla maxFps kare çiz → ekran kartı daha az ısınır.
+// Giriş sayfası ve garajda araba sadece yavaşça döner: 30 kare yeter (telefonun pili, bilgisayarın ısısı)
+const IDLE_FPS = 30
 let lastFrameTime = -Infinity
 
 renderer.setAnimationLoop((time) => {
+  const idle = router.current === 'landing' || router.current === 'garage'
+  const minFrameTime = 1000 / (idle ? IDLE_FPS : quality.maxFps)
   if (time - lastFrameTime < minFrameTime - 2) return // -2 ms tolerans: 60 Hz ekranda kare atlamasın
   lastFrameTime = time
   timer.update(time)

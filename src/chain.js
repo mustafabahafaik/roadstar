@@ -281,6 +281,8 @@ export function createChain(onChange = () => {}) {
     send,
     stats,
     readPool,
+    // Bu cüzdanın bugüne kadar gönderdiği işlem sayısı = zincirdeki nonce'u (giriş sayfası istatistiği)
+    getTxCount: () => provider.getTransactionCount(wallet.address, 'latest'),
     // Sunucuya "bu adres benim" kanıtı: metni burner anahtarıyla imzala (işlem değil, zincire gitmez)
     signMessage: (text) => wallet.signMessage(text),
     get balance() {

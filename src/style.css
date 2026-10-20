@@ -685,3 +685,223 @@ canvas {
   letter-spacing: 1px;
 }
 .lobby-bots { margin: 6px 0 0; color: #29e7ff; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* =====================================================================
+   Ekranlar (router.js → <body data-screen="landing | garage | lobby | race | results">)
+   Hangi HUD'un nerede görüneceğine CSS karar verir: JavaScript tek tek gizlemez
+   ===================================================================== */
+body:not([data-screen='race']):not([data-screen='results']) .race-progress,
+body:not([data-screen='race']):not([data-screen='results']) .boost-hud,
+body:not([data-screen='race']):not([data-screen='results']) .speed-lines {
+  display: none;
+}
+/* Giriş ve garajda zincir paneli sadece cüzdan: adres, bakiye, faucet (işlem listesi yarışta) */
+body[data-screen='landing'] .tx-list,
+body[data-screen='garage'] .tx-list {
+  display: none;
+}
+.tx-panel { z-index: 6; } /* giriş sayfasının (5) üstünde, lobi ve sonuç kartının (10) altında */
+
+/* --- Giriş sayfası (landing.js) --- */
+.landing,
+.garage {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  box-sizing: border-box;
+  color: #e6eaff;
+  font: 500 14px/1.4 system-ui, 'Segoe UI', sans-serif;
+  /* Orta saydam (arkada dönen araba görünsün), kenarlar koyu (yazılar okunsun) */
+  background:
+    radial-gradient(ellipse at 50% 55%, transparent 30%, rgba(8, 10, 22, 0.7) 100%),
+    linear-gradient(to bottom, rgba(8, 10, 22, 0.6), transparent 32%, transparent 58%, rgba(8, 10, 22, 0.88));
+}
+.landing {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  gap: 18px;
+  padding: max(28px, env(safe-area-inset-top)) 24px max(14px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+.landing-hero { align-self: start; margin-top: 6vh; text-align: center; }
+.landing-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: #29e7ff;
+}
+.landing-live {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2bd47d;
+  box-shadow: 0 0 10px #2bd47d;
+  animation: landing-pulse 1.6s ease-in-out infinite;
+}
+@keyframes landing-pulse { 50% { opacity: 0.35; } }
+.landing h1,
+.garage h1 {
+  margin: 6px 0 0;
+  font-size: clamp(54px, 13vw, 150px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  color: #fff;
+  text-shadow: 0 0 18px #ff3bd6, 0 0 54px rgba(255, 59, 214, 0.55);
+}
+.landing-slogan { margin: 10px 0 0; font-size: clamp(15px, 2.2vw, 20px); opacity: 0.9; }
+.landing-actions { display: flex; justify-content: center; gap: 12px; margin-top: 26px; }
+.landing-button {
+  min-width: 170px;
+  padding: 14px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
+  background: rgba(8, 10, 22, 0.55);
+  color: #fff;
+  font: 800 16px system-ui, sans-serif;
+  letter-spacing: 2px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.landing-button:hover { border-color: #29e7ff; }
+.landing-play {
+  border: 0;
+  background: linear-gradient(90deg, #ff3bd6, #9b6bff);
+  box-shadow: 0 0 28px rgba(255, 59, 214, 0.55);
+}
+.landing-touch { max-width: 420px; margin: 14px auto 0; font-size: 13px; color: #ffd23f; }
+
+.landing-maps { justify-self: center; width: min(560px, 100%); }
+.landing-maps h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: 3px; opacity: 0.75; text-align: center; }
+.landing-map-list { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.landing-map {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  padding: 8px 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(8, 10, 22, 0.66);
+  color: #e6eaff;
+  font: 500 12px/1.3 system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.landing-map b { font-size: 15px; }
+.landing-map small { opacity: 0.7; }
+.landing-map.on { border-color: #29e7ff; box-shadow: 0 0 0 1px #29e7ff, 0 0 22px rgba(0, 240, 255, 0.35); }
+.landing-map:disabled { cursor: not-allowed; opacity: 0.62; }
+.landing-map em {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #ffd23f;
+  color: #1a1030;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+.landing-map-art { height: 64px; border-radius: 9px; margin-bottom: 4px; }
+/* Harita resimleri: dosya yok, CSS degradeleriyle çizilmiş küçük sahneler */
+.art-neon-ocean {
+  background:
+    linear-gradient(170deg, transparent 47%, #29e7ff 48% 50%, transparent 51%),
+    linear-gradient(170deg, transparent 52%, #ff3bd6 53% 54%, transparent 55%),
+    radial-gradient(ellipse at 50% 130%, #00a3c4, #052a4d 60%, #0b1430);
+}
+.art-saturn {
+  background:
+    radial-gradient(60% 14% at 50% 56%, transparent 62%, rgba(255, 214, 160, 0.85) 66% 76%, transparent 80%),
+    radial-gradient(circle at 50% 56%, #f2b36b 0 17%, transparent 18%),
+    radial-gradient(circle at 20% 30%, #fff 0 1px, transparent 2px),
+    radial-gradient(circle at 80% 20%, #fff 0 1px, transparent 2px),
+    linear-gradient(135deg, #2b0f3f, #0d0520);
+}
+
+.landing-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 22px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+.landing-stats b { color: #ffd23f; font-size: 14px; }
+
+/* --- Garaj (garage.js): şimdilik boş sayfa --- */
+.garage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+.garage h1 { font-size: clamp(44px, 10vw, 110px); }
+.garage p { margin: 12px 0 0; font-size: 16px; opacity: 0.85; }
+
+/* Lobi: ana sayfaya dön */
+.lobby-back {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 16px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  background: rgba(8, 10, 22, 0.6);
+  color: #e6eaff;
+  font: 600 13px system-ui, sans-serif;
+  cursor: pointer;
+}
+.race-result-actions { display: flex; justify-content: center; gap: 8px; }
+.race-result-actions .race-home { background: transparent; border: 1px solid rgba(255, 255, 255, 0.35); }
+
+/* Dokunmatik ekran: klavye tuşları listesi işe yaramaz */
+@media (pointer: coarse) {
+  .race-keys { display: none; }
+}
+
+/* Orta genişlik (dizüstü, tablet): sağ üstteki cüzdan paneli başlığın üstüne binmesin */
+@media (max-width: 1180px) {
+  .landing { padding-top: 116px; }
+  .landing-hero { margin-top: 0; }
+}
+
+/* --- Telefon (dar ekran): tek sütun, cüzdan üstte tam genişlik --- */
+@media (max-width: 640px) {
+  .tx-panel {
+    top: max(10px, env(safe-area-inset-top));
+    left: 10px;
+    right: 10px;
+    width: auto;
+    padding: 8px 10px;
+  }
+  .landing { padding: 104px 16px max(12px, env(safe-area-inset-bottom)); gap: 14px; }
+  .landing-hero { margin-top: 1vh; }
+  .landing h1 { font-size: 15vw; letter-spacing: 0.08em; }
+  .landing-actions { flex-direction: column; align-items: stretch; margin-top: 18px; }
+  .landing-button { min-width: 0; width: 100%; }
+  .landing-map small { display: none; }
+  .landing-map-art { height: 48px; }
+  .landing-stats { flex-direction: column; align-items: center; gap: 2px; }
+  .race-lobby { padding-top: 64px; }
+}
+/* Yatay telefon (alçak ekran): boşlukları kıs */
+@media (max-height: 520px) {
+  .landing-hero { margin-top: 0; }
+  .landing h1 { font-size: 11vh; }
+  .landing-actions { margin-top: 12px; }
+  .landing-map small { display: none; }
+  .landing-map-art { height: 36px; }
+}

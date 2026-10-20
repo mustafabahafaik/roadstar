@@ -3,6 +3,7 @@ import * as THREE from 'three'
 // Kamera modları:
 //   'chase' → takip: arabanın arkasında ve yukarısında (fareyle sürükleyince etrafına bakar)
 //   'fall'  → düşüş: arabanın düştüğü tarafta, yanında ve biraz yukarıda durup arabaya bakar
+//   'showcase' → vitrin (giriş sayfası): arabanın etrafında yavaşça döner
 // Geçiş ani değil: iki modun hedef noktası her karede hesaplanır, blend (0 → 1) yumuşakça değişir
 // ve kamera bu ikisinin arasına konur.
 
@@ -11,6 +12,9 @@ const FALL_SIDE_DISTANCE = 16 // düşüş: kamera arabanın kaç birim yanında
 const FALL_SIDE_HEIGHT = 5 // düşüş: kamera arabanın kaç birim yukarısında
 const FALL_SIDE_AHEAD = 4 // düşüş: kamera biraz önde dursun → araba ve arkadaki pist birlikte görünür
 const MODE_BLEND_SPEED = 3 // mod geçişinin hızı (büyüdükçe daha çabuk)
+const SHOWCASE_SPEED = 0.22 // vitrin: dönüş hızı (rad/sn) → bir tur ~29 sn
+const SHOWCASE_RADIUS = 14 // bitiş kapısının sütunları ~10.7 birimde: içinden geçmesin
+const SHOWCASE_HEIGHT = 3.2
 
 // isOrbitEnabled: serbest kamera (C tuşu) açıksa fare olaylarını OrbitControls'e bırak
 export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabled }) {
@@ -19,6 +23,8 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   let mode = 'chase'
   let blend = 0 // 0 = tamamen takip, 1 = tamamen düşüş kamerası
   let fallSide = 1 // düşülen taraf: +1 sağ, −1 sol
+  let showcaseAngle = 2.4 // vitrin: kameranın arabaya göre açısı (önden-yandan başla)
+  const showcasePosition = new THREE.Vector3()
 
   const chasePosition = new THREE.Vector3()
   const chaseLook = new THREE.Vector3()
@@ -52,8 +58,28 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
     if (next === 'fall') fallSide = side
   }
 
+  // Vitrin: arabanın çevresinde daire (yatay açı zamanla artar), yükseklik hafifçe nefes alır
+  function updateShowcase(dt) {
+    showcaseAngle += SHOWCASE_SPEED * dt
+    const center = car.model.position
+    showcasePosition.set(
+      center.x + Math.cos(showcaseAngle) * SHOWCASE_RADIUS,
+      center.y + SHOWCASE_HEIGHT + Math.sin(showcaseAngle * 0.7) * 0.8,
+      center.z + Math.sin(showcaseAngle) * SHOWCASE_RADIUS,
+    )
+    camera.position.lerp(showcasePosition, 1 - Math.exp(-3 * dt))
+    // Arabanın biraz ÜSTÜNE bak: araba ekranda aşağı iner, başlık ve butonların arkasında kalmaz
+    lookTarget.copy(center).y += 3
+    camera.lookAt(lookTarget)
+    // Dar açı (telefonda dikey ekranda biraz geniş): araba ekranı doldursun
+    const targetFov = camera.aspect < 1 ? 58 : 42
+    camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-3 * dt))
+    camera.updateProjectionMatrix()
+  }
+
   // dt: GERÇEK zaman. Kamera ağır çekimden etkilenmesin (yoksa geçiş de ağır çekimde yavaşlar)
   function update(dt) {
+    if (mode === 'showcase') return updateShowcase(dt)
     if (!look.dragging) {
       const back = 1 - Math.exp(-1.5 * dt)
       look.yaw -= look.yaw * back

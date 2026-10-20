@@ -12,6 +12,7 @@ import { COUNTDOWN_MS, SEND_RATE, rankPlayers } from '../shared/protocol.js'
 import { createLobby } from './lobby.js'
 import { createRemotePlayers } from './remotePlayers.js'
 import { escapeHtml, toCssColor } from './html.js'
+import { saveLastRace } from './landing.js'
 
 // Yarış akışı: lobi → geri sayım → yarış → bitiş kapısı (finished) ya da dnf.
 // Çok oyunculu: seed'i ve başlangıç ANINI sunucu verir (herkes aynı parkurda, aynı anda başlar).
@@ -100,7 +101,8 @@ function enableShadows(group) {
 
 // scene, car, chain, gameState, net: main.js'ten. onCourse(seed, label, race) → items (main.js oluşturur).
 // getScore: takla skoru (sonuç ekranı için). showMessage / holdMessage: ekran yazısı
-export function createRace({ scene, car, chain, gameState, net, onCourse, getScore, showMessage, holdMessage }) {
+// router: ekran geçişleri (router.js) — lobi, yarış ve sonuç ekranlarını burada kaydederiz
+export function createRace({ scene, car, chain, gameState, net, router, onCourse, getScore, showMessage, holdMessage }) {
   const race = { id: null, seed: null, onChain: false } // zincirdeki yarış numarası ve token seed'i
   let items = null
   let multiplayer = false
@@ -173,7 +175,20 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
         startAt: net.serverNow() + COUNTDOWN_MS,
         multiplayer: false,
       }),
+    onBack: () => router.go('landing'),
   })
+
+  // --- Ekranlar (router.js) ---
+  router.register('lobby', {
+    enter: () => lobby.show(),
+    leave(next) {
+      lobby.hide()
+      // Odaya girip geri dönen: sayfayı temiz yükle (sunucu bağlantı kopunca koltuğu boşaltır)
+      if (next !== 'race' && lobby.joined) router.reloadTo('landing')
+    },
+  })
+  router.register('race', {}) // HUD'u CSS gösterir (body[data-screen="race"])
+  router.register('results', {})
 
   // --- Sunucu olayları ---
   net.on('room', (r) => {
@@ -195,6 +210,7 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
   // --- Geri sayım: parkuru kur, startAt anını bekle (update içinde) ---
   function beginCountdown({ seed, startAt: at, multiplayer: mp }) {
     if (!gameState.set(GAME_STATE.COUNTDOWN)) return
+    router.go('race')
     lobby.remove()
     multiplayer = mp
     startAt = at
@@ -246,6 +262,7 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
     }
     renderResults()
     results.classList.add('show')
+    router.go('results')
   }
 
   // Bizim durumumuz sunucunun diliyle: 'finished' | 'dnf' | 'racing'
@@ -402,14 +419,22 @@ export function createRace({ scene, car, chain, gameState, net, onCourse, getSco
         <div class="${s.failed ? 'bad' : ''}"><b>${s.failed}</b>hatalı</div>
         <div><b>${s.pending}</b>bekleyen</div>
       </div>
-      <button class="tx-again">${multiplayer ? 'Lobiye dön' : 'Yeni yarış'}</button>`
+      <div class="race-result-actions">
+        <button class="tx-again race-home">Ana sayfa</button>
+        <button class="tx-again race-again">Tekrar yarış</button>
+      </div>`
+    saveLastRace({ avgMs: s.avgMs, sent: s.sent, at: Date.now() }) // giriş sayfasındaki istatistik için
     const claimButton = results.querySelector('.race-claim')
     if (claimButton) claimButton.onclick = claimPrize
-    results.querySelector('.tx-again').onclick = () => {
+    // Sonuç → giriş sayfası / lobi: sayfayı yenileyerek (parkur, araba, tokenlar, rakipler temiz başlasın)
+    const leaveResults = (screen) => () => {
       const url = new URL(window.location.href)
       url.searchParams.delete('seed') // sabit seed verildiyse kaldır: yeni yarış = yeni parkur (oda kalır)
-      window.location.href = url.toString()
+      history.replaceState(null, '', url)
+      router.reloadTo(screen)
     }
+    results.querySelector('.race-home').onclick = leaveResults('landing')
+    results.querySelector('.race-again').onclick = leaveResults('lobby')
   }
 
   // Ağa gönderilecek hâli: sayıları yuvarla (daha küçük mesaj). Konum 2, dönüş 4 ondalık yeterli

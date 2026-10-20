@@ -24,14 +24,17 @@ const saveName = (name) => {
 
 const mon = (wei) => `${Number(formatEther(wei))} MON`
 
-// Açılış ekranı: sunucuya bağlan → takma ad + oda → oyuncu listesi + (ücretli oda: yatır) + "Hazırım".
-// Yarışı sunucu başlatır ('start' olayını race.js dinler). onSolo: sunucusuz tek kişilik yarış
-export function createLobby({ net, chain, onSolo }) {
+// Lobi ekranı: sunucuya bağlan → takma ad + oda → oyuncu listesi + (ücretli oda: yatır) + "Hazırım".
+// Yarışı sunucu başlatır ('start' olayını race.js dinler). onSolo: sunucusuz tek kişilik yarış.
+// onBack: "← Ana sayfa". Router ekrana getirince show(), giderken hide() çağırır (race.js)
+export function createLobby({ net, chain, onSolo, onBack }) {
   const params = new URLSearchParams(window.location.search)
   const el = document.createElement('div')
   el.className = 'race-lobby'
+  el.hidden = true // router lobiyi gösterene kadar gizli
   el.innerHTML = `
-    <h1>MONAD RACER</h1>
+    <button class="lobby-back">← Ana sayfa</button>
+    <h1>ROADSTAR</h1>
     <p class="race-sub">${RACE_LENGTH} m · ${MAX_PLAYERS} kişiye kadar · bitiş kapısına ilk sen ulaş</p>
 
     <form class="lobby-join">
@@ -93,15 +96,21 @@ export function createLobby({ net, chain, onSolo }) {
     status.classList.toggle('bad', bad)
   }
 
-  // Bağlan: başarılıysa "Odaya katıl" açılır; sunucu yoksa sadece tek başına oynanır
-  net
-    .connect()
-    .then(() => {
-      joinButton.disabled = false
-      setStatus(`Sunucuya bağlı · ping ${net.rtt} ms`)
-      nameInput.focus()
-    })
-    .catch(() => setStatus(`Sunucuya ulaşılamadı (${SERVER_URL}). Tek başına yarışabilirsin.`, true))
+  let joined = false // bir odaya girdim mi (geri dönünce sunucudaki koltuk temizlensin diye)
+  let connecting = null
+
+  // Bağlan (lobi ilk kez açılınca): başarılıysa "Odaya katıl" açılır; sunucu yoksa sadece tek başına oynanır
+  function connectOnce() {
+    connecting ??= net
+      .connect()
+      .then(() => {
+        joinButton.disabled = false
+        setStatus(`Sunucuya bağlı · ping ${net.rtt} ms`)
+        nameInput.focus()
+      })
+      .catch(() => setStatus(`Sunucuya ulaşılamadı (${SERVER_URL}). Tek başına yarışabilirsin.`, true))
+  }
+  $('.lobby-back').addEventListener('click', onBack)
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault() // form sayfayı yenilemesin
@@ -113,6 +122,7 @@ export function createLobby({ net, chain, onSolo }) {
       const proof = await chain.signMessage(ownershipMessage(net.id))
       const res = await net.join(name, roomInput.value, { address: chain.address, proof })
       if (!res.ok) throw new Error(res.error)
+      joined = true
       saveName(name)
       poolEnabled = chain.poolEnabled && res.poolEnabled
       // Oda adresini çubuğa yaz: sayfayı yenileyince / bağlantıyı paylaşınca aynı oda dolu gelsin
@@ -228,6 +238,14 @@ export function createLobby({ net, chain, onSolo }) {
 
   return {
     render,
+    show() {
+      el.hidden = false
+      connectOnce()
+    },
+    hide: () => (el.hidden = true),
+    get joined() {
+      return joined
+    },
     remove: () => {
       clearInterval(botTimer)
       el.remove()
