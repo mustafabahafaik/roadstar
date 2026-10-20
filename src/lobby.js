@@ -54,6 +54,7 @@ export function createLobby({ net, chain, onSolo }) {
 
       <button class="race-start lobby-ready">HAZIRIM</button>
       <p class="race-sub lobby-hint"></p>
+      <p class="lobby-bots" hidden></p>
     </div>
 
     <p class="lobby-status">Sunucuya bağlanılıyor…</p>
@@ -165,6 +166,16 @@ export function createLobby({ net, chain, onSolo }) {
 
   $('.lobby-solo').addEventListener('click', onSolo)
 
+  // Bot geri sayımı: sunucu "şu anda dolduracağım" der (botFillAt), kalan süreyi sunucu saatiyle sayarız
+  const botsLine = $('.lobby-bots')
+  const botTimer = setInterval(() => {
+    const at = lastRoom?.botFillAt
+    botsLine.hidden = !at
+    if (!at) return
+    const left = Math.max(0, Math.ceil((at - net.serverNow()) / 1000))
+    botsLine.textContent = left > 0 ? `Boş koltuklar ${left} sn sonra botlarla dolacak` : 'Botlar geliyor…'
+  }, 250)
+
   // Oda listesi (sunucunun her 'room' olayında). İsimler başkalarından gelir → escapeHtml şart
   function render(room) {
     if (!room) return
@@ -180,7 +191,7 @@ export function createLobby({ net, chain, onSolo }) {
         return `
         <li style="--c:${toCssColor(p.color)}">
           <span class="lobby-dot"></span>
-          <b>${escapeHtml(p.name)}</b>${p.id === net.id ? ' <small>(sen)</small>' : ''}
+          ${p.bot ? '<span class="lobby-bot">BOT</span>' : ''}<b>${escapeHtml(p.name)}</b>${p.id === net.id ? ' <small>(sen)</small>' : ''}${p.left ? ' <small>(koptu, koltuğu tutuluyor)</small>' : ''}
           ${p.paid ? '<span class="lobby-paid">MON ✓</span>' : ''}
           <span class="${state[0]}">${state[1]}</span>
         </li>`
@@ -217,6 +228,9 @@ export function createLobby({ net, chain, onSolo }) {
 
   return {
     render,
-    remove: () => el.remove(),
+    remove: () => {
+      clearInterval(botTimer)
+      el.remove()
+    },
   }
 }

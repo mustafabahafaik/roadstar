@@ -8,7 +8,7 @@ import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { Server } from 'socket.io'
-import { getAddress } from 'ethers'
+import { getAddress, parseEther } from 'ethers'
 import {
   RACE_LENGTH,
   MAX_PLAYERS,
@@ -20,6 +20,7 @@ import {
   rankPlayers,
 } from '../shared/protocol.js'
 import { createPool, verifyOwnership } from './pool.js'
+import { createBotManager } from './bots.js'
 
 // server/.env → process.env (RESULT_SIGNER_KEY, POOL_ADDRESS...). Dosya yoksa ücretli oda kapalı çalışır
 try {
@@ -35,6 +36,7 @@ const RACE_TIMEOUT_MS = 5 * 60 * 1000 // 5 dakikada bitiremeyen DNF sayılır
 const CREATE_LOCK_MS = 60 * 1000 // zincir odasını kuran oyuncuya ayrılan süre
 const FULL_ROOM_GRACE_MS = 15 * 1000 // ücretli oda zincirde dolunca, hazır olmayan varsa en geç bu sürede başla
 const POOL_JOIN_WINDOW_S = 10 * 60 // RacePool.JOIN_WINDOW ile aynı: bu sürede dolmayan zincir odasına giriş kapanır
+const BOT_FILL_MS = 20 * 1000 // oda açıldıktan sonra bu sürede dolmazsa boş koltuklara bot
 
 // Hile kontrolü toleransları: ağ gecikmesi paketleri bazen yığar, dürüst oyuncu reddedilmesin
 const SPEED_TOLERANCE = 1.2 // azami hızın %20 fazlasına kadar
@@ -56,6 +58,23 @@ if (pool) {
 } else {
   console.log('RacePool ayarlı değil (server/.env): sadece ücretsiz yarış')
 }
+
+// --- Botlar (BOT_KEYS): boş koltukları doldurur. Ücretli modda kendi cüzdanlarıyla gerçekten öderler ---
+const botKeys = (process.env.BOT_KEYS ?? '')
+  .split(',')
+  .map((k) => k.trim())
+  .filter((k) => /^0x[0-9a-fA-F]{64}$/.test(k))
+const bots = botKeys.length
+  ? createBotManager({
+      keys: botKeys,
+      serverUrl: `http://localhost:${PORT}`,
+      rpcUrl: process.env.RPC_URL || 'https://testnet-rpc.monad.xyz',
+      poolAddress: pool?.address,
+      lowBalance: parseEther(process.env.BOT_LOW_BALANCE || '1.2'),
+    })
+  : null
+if (bots) bots.checkBalances()
+else console.log('BOT_KEYS yok: boş koltuklar botla dolmaz (node scripts/make-bots.js)')
 
 const httpServer = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
@@ -80,7 +99,7 @@ const cleanRoom = (text) =>
 
 function getRoom(id) {
   if (!rooms.has(id)) {
-    rooms.set(id, { id, status: 'lobby', seed: null, startAt: 0, players: new Map(), chain: null, creating: null, autoStartAt: 0 })
+    rooms.set(id, { id, status: 'lobby', seed: null, startAt: 0, players: new Map(), chain: null, creating: null, autoStartAt: 0, botFillAt: 0 })
   }
   return rooms.get(id)
 }
@@ -93,9 +112,30 @@ function releaseExpiredChain(room) {
   room.chain = null
   room.creating = null
   room.autoStartAt = 0
-  for (const p of room.players.values()) {
+  room.botFillAt = 0
+  for (const p of [...room.players.values()]) {
+    if (p.left) room.players.delete(p.id) // koltuğu tutulan kopmuş oyuncu: oda artık ücretsiz, gerek yok
     p.paid = false
     p.ready = false
+  }
+  broadcastRoom(room)
+}
+
+// Bot geri sayımını başlat (lobide görünür). Ücretli modda zincir odası bağlanınca, ücretsiz modda ilk insan girince
+function startBotTimer(room) {
+  if (!bots || room.botFillAt || room.status !== 'lobby') return
+  room.botFillAt = Date.now() + BOT_FILL_MS
+  console.log(`[${room.id}] ${BOT_FILL_MS / 1000} sn içinde dolmazsa boş koltuklar botla dolacak`)
+}
+
+// Süre doldu: boş koltuk sayısı kadar bot gönder (oda boyutu: zincir odası ya da 5)
+function fillWithBots(room) {
+  room.botFillAt = 0
+  const capacity = room.chain?.maxPlayers ?? MAX_PLAYERS
+  const empty = capacity - room.players.size
+  const hasHuman = [...room.players.values()].some((p) => !p.bot)
+  if (empty > 0 && hasHuman) {
+    bots.fill(room.id, empty, BigInt(room.chain?.entryFee ?? 0)).then((sent) => console.log(`[${room.id}] ${sent} bot geliyor (${empty} boş koltuk)`))
   }
   broadcastRoom(room)
 }
@@ -108,9 +148,11 @@ function publicRoom(room) {
     chain: room.chain,
     creating: Boolean(room.creating),
     autoStartAt: room.autoStartAt,
+    botFillAt: room.botFillAt, // lobide geri sayım (0 = yok)
     players: [...room.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
+      bot: p.bot,
       color: p.color,
       address: p.address,
       paid: p.paid,
@@ -142,7 +184,7 @@ async function maybeStart(room) {
       room.autoStartAt = 0
       return
     }
-    const allReady = players.every((p) => p.ready)
+    const allReady = players.every((p) => p.ready || p.left)
     if (!allReady && !room.autoStartAt) {
       room.autoStartAt = Date.now() + FULL_ROOM_GRACE_MS // tick döngüsü bu ana gelince tekrar çağırır
       broadcastRoom(room)
@@ -172,12 +214,13 @@ async function maybeStart(room) {
 
   room.status = 'racing'
   room.autoStartAt = 0
+  room.botFillAt = 0
   room.seed = '0x' + randomBytes(32).toString('hex') // herkes bu seed'den AYNI parkuru üretir
   // "Şimdi başla" demiyoruz: mesaj herkese farklı gecikmeyle varır. Gelecekte bir AN veriyoruz;
   // her oyuncu bu anı kendi saatine çevirip (saat farkı: ping/pong) aynı anda başlar
   room.startAt = Date.now() + COUNTDOWN_MS
   for (const p of players) {
-    p.status = 'racing'
+    p.status = p.left ? 'dnf' : 'racing' // ödeyip lobide kopan: yarışa DNF başlar (koltuğu zincirde dolu)
     p.ready = false
     p.state = null
     p.last = { progress: 0, time: room.startAt }
@@ -231,6 +274,7 @@ async function endRace(room) {
   room.chain = null
   room.creating = null
   room.autoStartAt = 0
+  room.botFillAt = 0
   for (const p of [...room.players.values()]) {
     if (p.left) room.players.delete(p.id) // kopanlar sonuçta göründü, artık listeden çıkar
     p.status = 'lobby'
@@ -271,29 +315,37 @@ io.on('connection', (socket) => {
 
   // address + proof: isteğe bağlı. proof = ownershipMessage(socket.id) metninin burner cüzdanla imzası.
   // Kanıt yoksa ücretsiz yarışabilir ama ücretli odaya ödeme yapamaz
-  socket.on('join', ({ name, room: roomId, address, proof } = {}, ack = () => {}) => {
+  // botToken: sadece sunucunun kendi botları bilir (bots.js). Lobide "BOT" rozeti buna göre
+  socket.on('join', ({ name, room: roomId, address, proof, botToken } = {}, ack = () => {}) => {
     if (typeof ack !== 'function') return
     if (room) return ack({ ok: false, error: 'Zaten bir odadasın' })
     const target = getRoom(cleanRoom(roomId))
     releaseExpiredChain(target)
-    const capacity = target.chain?.maxPlayers ?? MAX_PLAYERS
     if (target.status !== 'lobby') return ack({ ok: false, error: 'Bu odada yarış sürüyor, biraz bekle' })
-    if (target.players.size >= capacity) return ack({ ok: false, error: `Oda dolu (${capacity} kişi)` })
 
     let verified = null
     if (address) {
       if (!verifyOwnership(socket.id, address, proof)) return ack({ ok: false, error: 'Cüzdan kanıtı geçersiz' })
       verified = getAddress(address)
+      const same = [...target.players.values()].find((p) => p.address === verified)
+      // Ödeyip lobide kopan oyuncu geri döndü: tutulan koltuğunu devralır ("yatır"a basınca yeniden ödemez)
+      if (same?.left) target.players.delete(same.id)
       // Bir cüzdan = bir koltuk (aynı burner'la iki sekme ücretli odada iki kez sayılmasın)
-      if ([...target.players.values()].some((p) => p.address === verified)) {
-        return ack({ ok: false, error: 'Bu cüzdan zaten odada (ikinci oyuncu için gizli pencere aç)' })
-      }
+      else if (same) return ack({ ok: false, error: 'Bu cüzdan zaten odada (ikinci oyuncu için gizli pencere aç)' })
     }
+    const capacity = target.chain?.maxPlayers ?? MAX_PLAYERS
+    if (target.players.size >= capacity) return ack({ ok: false, error: `Oda dolu (${capacity} kişi)` })
+
+    const isBot = Boolean(bots) && botToken === bots.token
+    // İnsan "BOT" diye başlayan bir ad seçemez (bot taklidi yapmasın)
+    const cleanedName = cleanName(name, 'Pilot', 16)
+    const safeName = isBot ? cleanedName : cleanName(cleanedName.replace(/^\s*bot(\W+|$)/i, ''), 'Pilot', 16)
 
     room = target
     player = {
       id: socket.id,
-      name: cleanName(name, 'Pilot', 16),
+      name: safeName,
+      bot: isBot,
       color: freeColor(room),
       address: verified,
       paid: false,
@@ -309,6 +361,7 @@ io.on('connection', (socket) => {
     room.players.set(socket.id, player)
     socket.join(room.id) // Socket.IO odası: io.to(room.id) bu odadaki herkese gönderir
     console.log(`[${room.id}] ${player.name} katıldı (${room.players.size}/${capacity})`)
+    if (!pool && !isBot) startBotTimer(room) // ücretsiz mod: ilk insan girince geri sayım
     ack({ ok: true, you: { id: player.id, color: player.color }, room: publicRoom(room), poolEnabled: Boolean(pool) })
     broadcastRoom(room)
     maybeStart(room) // oda 5 kişiyle dolduysa beklemeden başla
@@ -376,6 +429,7 @@ io.on('connection', (socket) => {
       room.creating = null
       for (const p of room.players.values()) if (!p.paid) p.ready = false // ücretsiz "hazır"lar geçersiz
       console.log(`[${room.id}] ücretli oda: zincir odası #${id}, ${info.maxPlayers} kişilik`)
+      startBotTimer(room) // ücretli mod: oda zincirde açıldı → 20 sn geri sayım
     }
     player.paid = true
     console.log(`[${room.id}] ${player.name} ödedi (zincirde doğrulandı)`)
@@ -445,6 +499,14 @@ io.on('connection', (socket) => {
       maybeEnd(room)
     } else if (room.status === 'ending') {
       player.left = true // sonuç imzalanıyor: endRace listeden çıkaracak
+    } else if (room.chain && player.paid) {
+      // Zincirde ödedi: koltuğu tutulur. Oda dolarsa yarış onsuz başlar (DNF) ve para yine dağıtılabilir;
+      // silseydik oda bir daha "dolu" olmaz, zincirde başlamış odanın parası 1 gün kilitli kalırdı
+      player.left = true
+      player.ready = false
+      console.log(`[${room.id}] ${player.name} koptu (ödemiş: koltuğu tutuluyor)`)
+      broadcastRoom(room)
+      maybeStart(room)
     } else {
       room.players.delete(socket.id)
       if (room.creating?.playerId === socket.id) room.creating = null
@@ -464,6 +526,9 @@ setInterval(() => {
   const now = Date.now()
   for (const room of rooms.values()) {
     if (room.status === 'lobby' && room.autoStartAt && now >= room.autoStartAt) maybeStart(room) // ücretli oda bekleme süresi doldu
+    if (room.status === 'lobby' && room.botFillAt && now >= room.botFillAt) fillWithBots(room)
+    if (room.status === 'lobby' && room.chain) releaseExpiredChain(room)
+    if (room.status === 'lobby' && room.players.size === 0 && !room.chain) rooms.delete(room.id)
     if (room.status !== 'racing') continue
     const players = []
     for (const p of room.players.values()) {

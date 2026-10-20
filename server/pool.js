@@ -20,6 +20,10 @@ export function verifyOwnership(socketId, address, proof) {
 // rpcUrl, address (RacePool), signerKey (RESULT_SIGNER_KEY). Biri eksikse null: ücretli oda kapalı
 export function createPool({ rpcUrl, address, signerKey }) {
   if (!address || !signerKey) return null
+  if (!/^0x[0-9a-fA-F]{64}$/.test(signerKey)) {
+    console.warn('⚠️  RESULT_SIGNER_KEY geçersiz (0x + 64 hane olmalı): ücretli oda kapalı')
+    return null
+  }
   const provider = new JsonRpcProvider(rpcUrl)
   const contract = new Contract(address, POOL_ABI, provider)
   const signer = new Wallet(signerKey)

@@ -673,3 +673,15 @@ canvas {
 .race-claim-txs { margin: 0; padding: 0; list-style: none; font-size: 12px; display: grid; gap: 2px; }
 .race-claim-txs a { color: #29e7ff; text-decoration: none; }
 .race-win { font-style: normal; color: #ffd23f; font-weight: 800; }
+
+/* --- Botlar (lobby.js) --- */
+.lobby-bot {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(0, 240, 255, 0.18);
+  color: #29e7ff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.lobby-bots { margin: 6px 0 0; color: #29e7ff; font-weight: 700; font-variant-numeric: tabular-nums; }

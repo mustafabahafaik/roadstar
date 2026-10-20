@@ -18,8 +18,11 @@ const slopeAt = (t) => (2 * RAMP_HEIGHT * t) / RAMP_LENGTH
 
 // Pistte (u, offset) noktasındaki rampa yüzeyi: { height, slope }. Rampa yoksa { 0, 0 }
 const flat = { height: 0, slope: 0 }
-export function rampSurface(u, offset) {
-  for (const r of course.ramps) {
+export const rampSurface = (u, offset) => rampSurfaceIn(course.ramps, u, offset)
+
+// Aynı hesap, verilen rampa listesiyle (sunucudaki botlar: her odanın parkuru ayrı)
+export function rampSurfaceIn(ramps, u, offset) {
+  for (const r of ramps) {
     const along = trackDistance(r.startU, u) // rampanın başından bu yana kaç birim (işaretli)
     if (along < 0 || along > RAMP_LENGTH) continue
     if (Math.abs(offset - r.offset) > r.width / 2) continue

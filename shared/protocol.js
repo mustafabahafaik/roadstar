@@ -14,6 +14,12 @@ export const TICK_RATE = 15 // sunucu → odadaki herkes
 // Hile kontrolü: pist boyunca en yüksek hız. car.js MAX_SPEED 70 × boost 2 = 140
 export const MAX_TRACK_SPEED = 140 // birim / saniye
 
+// RacePool işlemlerinin gaz limitleri (oyun ve botlar aynı değeri kullanır). Ölçüm: en kötü durum
+// (5 kişilik oda, ilk kez yazılan alacaklar) + 21k taban + ~%30 pay. Monad ücreti LİMİT üzerinden keser.
+// estimateGas kullanmıyoruz: aynı anda giren iki oyuncudan biri tahmin anında "son giren" değilken
+// işlendiğinde son giren olabilir (odayı başlatmak daha pahalı) → tahmin edilen gaz yetmez
+export const POOL_GAS_LIMITS = { createRoom: 140000n, joinRoom: 150000n, settle: 220000n, withdraw: 75000n, refund: 90000n }
+
 // Oyuncu renkleri: odaya giriş sırasına göre (lobi listesi, araba boyası, isim etiketi)
 export const PLAYER_COLORS = [0x00f0ff, 0xff3bd6, 0xffd23f, 0x7dff6b, 0xff7a3d]
 

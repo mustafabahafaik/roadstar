@@ -1,4 +1,5 @@
 import { JsonRpcProvider, Wallet, Interface, keccak256, formatEther, parseEther } from 'ethers'
+import { POOL_GAS_LIMITS } from '../shared/protocol.js'
 
 // --- Ağ ve kontrat ---
 export const MONAD_TESTNET = {
@@ -64,17 +65,13 @@ export function parseRoomCreated(receipt) {
 // Gaz limitleri: ölçülen değer + taban ücret (21k) + pay. Monad ücreti limit üzerinden keser → dar tut.
 // estimateGas kullanmıyoruz: hem fazladan RPC (gecikme) hem de iyimser akışta yanlış sonuç verir
 // (ör. collect henüz işlenmeden useSkill tahmini "token yok" der)
-// RacePool limitleri: en kötü durum ölçümü (5 kişilik oda, ilk kez yazılan alacaklar) + 21k + ~%30 pay.
-// settle: 137.8k yürütme + 21k taban + ~7k veri (5 adres + imza) ≈ 166k
+// RacePool limitleri shared/protocol.js'te (botlar da kullanır)
 const GAS_LIMITS = {
   startRace: 150000n,
   collect: 140000n,
   useSkill: 95000n,
   finishRace: 80000n,
-  createRoom: 140000n,
-  joinRoom: 150000n,
-  settle: 220000n,
-  withdraw: 75000n,
+  ...POOL_GAS_LIMITS,
 }
 const RECEIPT_POLL_MS = 150 // onayı kaç ms'de bir soralım (ölçüm hassasiyeti)
 const FEE_REFRESH_MS = 20000 // gas fiyatını ne sıklıkla güncelleyelim

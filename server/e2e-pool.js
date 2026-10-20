@@ -119,14 +119,15 @@ async function main() {
   // --- Ayşe: settle + withdraw ---
   // Önceki koşulardan kalan alacaklar olabilir (aynı anvil): farklara bakıyoruz
   const treasury = await a.pool.treasury()
+  const aBefore = await a.pool.claimable(a.wallet.address) // önceki koşulardan kalan alacak (withdraw hepsini çeker)
   const bBefore = await a.pool.claimable(b.wallet.address)
   const tBefore = await a.pool.claimable(treasury)
   const poolBefore = await provider.getBalance(POOL)
   const settleReceipt = await (await a.pool.settle(settlement.roomId, settlement.ranking, settlement.signature)).wait()
   const withdrawReceipt = await (await a.pool.withdraw()).wait()
   const withdrawn = a.pool.interface.parseLog(withdrawReceipt.logs[0]).args.amount
-  check(withdrawn === parseEther('1.6'), `Ayşe çekti: ${formatEther(withdrawn)} MON (settle ${settleReceipt.gasUsed} gaz, withdraw ${withdrawReceipt.gasUsed} gaz)`)
-  check(poolBefore - (await provider.getBalance(POOL)) === parseEther('1.6'), 'kontrattan sadece 1.6 MON çıktı')
+  check(withdrawn - aBefore === parseEther('1.6'), `Ayşe çekti: +${formatEther(withdrawn - aBefore)} MON bu yarıştan (settle ${settleReceipt.gasUsed} gaz, withdraw ${withdrawReceipt.gasUsed} gaz)`)
+  check(poolBefore - (await provider.getBalance(POOL)) === withdrawn, 'kontrattan tam çekilen kadar MON çıktı')
   check((await a.pool.claimable(b.wallet.address)) - bBefore === parseEther('0.3'), 'Bora alacağı +0.3 MON (2. %15)')
   check((await a.pool.claimable(treasury)) - tBefore === parseEther('0.1'), 'treasury alacağı +0.1 MON (%5)')
 
