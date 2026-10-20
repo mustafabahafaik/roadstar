@@ -24,6 +24,7 @@ import { DEFAULT_LOADOUT, applyLoadout } from './parts.js'
 import { createWorld } from './world.js'
 import { DEFAULT_MAP } from './maps.js'
 import { createMeteors } from './meteors.js'
+import { createAudio, createSoundToggle } from './audio.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -81,6 +82,11 @@ function holdMessage(text) {
   hudMessage.classList.add('hold')
 }
 
+// Sesler (audio.js): hepsi prosedürel, dosya yok. Tarayıcı izin verene kadar (ilk tıklama) sessiz.
+// Sağ üstte aç/kapa düğmesi; tercih localStorage'da
+const audio = createAudio()
+createSoundToggle(audio)
+
 // Ortak duman havuzu (smoke.js): alt itici, yan iticiler, takla pufları, patlama
 const smoke = createSmoke(scene, renderer)
 
@@ -89,8 +95,14 @@ const gameState = createGameState()
 
 // Araba: W/S gaz-fren, A/D sağ-sol, Space zıpla (basılı tut → roketle süzül) (car.js)
 const car = createCar(scene, smoke, {
-  onCrash: () => showMessage('ÇARPTIN!'),
-  onFall: () => fall.start(), // altında yol kalmadı: düşüş sahnesi (fall.js)
+  onCrash: () => {
+    showMessage('ÇARPTIN!')
+    audio.explosion()
+  },
+  onFall: () => {
+    fall.start() // altında yol kalmadı: düşüş sahnesi (fall.js)
+    audio.explosion() // ağır çekim başlarken: patlama da yavaşlayıp pesleşir
+  },
   onShieldBlock: () => showMessage('KALKAN!'),
   // reason: 'lap' (bitiş kapısı) | 'dnf' (kalkansız düştü → zincire finishRace gitmez). race.js sonucu gösterir
   onFinish: (reason) => race.finish(reason),
@@ -98,7 +110,10 @@ const car = createCar(scene, smoke, {
 
 // Boost (boost.js): bar dolunca Shift → 3 sn 2x hız. Durum: hazır → aktif → bekliyor
 const boost = createBoost(car, {
-  onStart: () => showMessage('BOOST!'),
+  onStart: () => {
+    showMessage('BOOST!')
+    audio.boostStart()
+  },
 })
 
 // Havada takla (tricks.js): W/S öne-arkaya, Q/E barrel roll; temiz inişte skor + boost barı
@@ -106,6 +121,7 @@ const tricks = createTricks(car, smoke, {
   onTrick: (text) => showMessage(text),
   onBadLanding: (text) => showMessage(text),
   onCleanLanding: (turns) => boost.addCharge(0.25 * turns), // her tam tur: barın %25'i
+  onSidePuff: () => audio.sidePuff(), // havadaki yan iticiler
 })
 
 // Zincir (chain.js): burner cüzdan + kendi nonce takibimizle işlem gönderme.
@@ -141,6 +157,7 @@ const race = createRace({
   world,
   getMapId: () => landing?.map ?? DEFAULT_MAP,
   getLoadout: () => loadout,
+  audio,
   getScore: () => tricks.score,
   showMessage,
   holdMessage,
@@ -148,6 +165,7 @@ const race = createRace({
   onCourse: (seed, label, info) => {
     items = createItems(scene, car, seed, label, {
       onCollect: (index, type) => {
+        audio.collect(type) // türüne göre "çın" (altın daha parlak)
         if (type === 3) boost.fill() // Block Rush toplandı: boost barı anında dolu
         if (info.onChain) chain.send('collect', [info.id, index], `collect #${index} ${TOKEN_TYPES[type].name}`)
       },
@@ -284,4 +302,15 @@ function simulate(realDelta) {
 
   if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı
   else cameraModes.update(realDelta) // kamera gerçek zamanla: ağır çekimde de akıcı
+
+  // Sesler: motor (hız + boost), itici (roket gücü), ağır çekim, dinleyici = kamera, rakip motorları
+  audio.update({
+    speedRatio: Math.min(1, car.speedRatio()),
+    boost: boost.intensity,
+    thrust: car.thrust,
+    active: router.current === 'race' || router.current === 'results', // giriş / garaj / lobide motor sussun
+    timeScale: fall.timeScale,
+    camera,
+    remotes: race.remoteVoices(),
+  })
 }

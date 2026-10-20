@@ -105,7 +105,8 @@ function enableShadows(group) {
 // router: ekran geçişleri (router.js) — lobi, yarış ve sonuç ekranlarını burada kaydederiz
 // getLoadout: garaj parçaları (odaya girerken sunucuya gider, rakipler arabamızı böyle görür)
 // world: harita değişimi (world.js). getMapId: giriş sayfasında seçilen harita (tek başına yarış + odaya katılırken)
-export function createRace({ scene, car, chain, gameState, net, router, world, getMapId, getLoadout, onCourse, getScore, showMessage, holdMessage }) {
+// audio: sesler (audio.js) — geri sayım bipleri, BAŞLA, bitiş fanfarı
+export function createRace({ scene, car, chain, gameState, net, router, world, getMapId, getLoadout, audio, onCourse, getScore, showMessage, holdMessage }) {
   const race = { id: null, seed: null, onChain: false } // zincirdeki yarış numarası ve token seed'i
   let items = null
   let multiplayer = false
@@ -268,6 +269,7 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     refreshPlayerState()
     if (reason === 'lap') {
       showMessage('BİTİŞ!')
+      audio.fanfare()
       if (race.onChain) chain.send('finishRace', [race.id], `finishRace #${race.id}`)
     }
     if (multiplayer) {
@@ -490,11 +492,15 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
       const left = startAt - now
       if (left > 0) {
         const n = Math.ceil(left / 1000)
-        if (n !== lastCount) holdMessage(String((lastCount = n)))
+        if (n !== lastCount) {
+          holdMessage(String((lastCount = n)))
+          audio.countdown()
+        }
       } else {
         car.state.locked = false
         gameState.set(GAME_STATE.RACING)
         showMessage(multiplayer ? 'BAŞLA!' : 'BAŞLA! (tek başına)')
+        audio.go()
       }
     }
 
@@ -535,5 +541,5 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     }
   }
 
-  return { race, update, finish, playerState, toNetwork, get items() { return items } }
+  return { race, update, finish, playerState, toNetwork, remoteVoices: () => remote.voices(), get items() { return items } }
 }

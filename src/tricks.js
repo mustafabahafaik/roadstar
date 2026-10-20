@@ -32,7 +32,8 @@ function moveTowards(current, target, maxDelta) {
   return current + Math.sign(target - current) * maxDelta
 }
 
-// events: { onTrick(text), onBadLanding(text), onCleanLanding(turns) } → main.js yazı çıkarır, boost barını doldurur
+// events: { onTrick(text), onBadLanding(text), onCleanLanding(turns), onSidePuff() } → main.js yazı çıkarır,
+// boost barını doldurur, yan itici sesini çalar
 export function createTricks(car, smoke, events = {}) {
   const spin = { flip: 0, roll: 0 } // açısal hız (rad/sn), arabanın yerel X ve Z eksenleri
   const spun = { flip: 0, roll: 0 } // bu sıçrayışta toplam dönüş (işaretli: sağa + sola = sıfırlar)
@@ -99,6 +100,7 @@ export function createTricks(car, smoke, events = {}) {
     if (puffAccumulator[accumulatorKey] < 1) return
     // Yön: arabanın yerel yönünü dünyaya çevir (ters dönmüşken de doğru tarafa)
     direction.copy(localDirection).transformDirection(car.model.matrixWorld)
+    events.onSidePuff?.() // audio.js: kısa "puf" (kendisi seyreltir)
     while (puffAccumulator[accumulatorKey] >= 1) {
       puffAccumulator[accumulatorKey] -= 1
       for (const nozzle of nozzles) {

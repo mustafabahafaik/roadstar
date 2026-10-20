@@ -96,6 +96,7 @@ export function createRemotePlayers(scene, net) {
         position: new THREE.Vector3(s.x, s.y, s.z),
         quaternion: new THREE.Quaternion(...s.rotation),
         progress: s.progress,
+        speed: s.speed, // motor sesi perdesi (audio.js)
       })
       if (p.buffer.length > MAX_BUFFER) p.buffer.shift()
     }
@@ -133,5 +134,14 @@ export function createRemotePlayers(scene, net) {
     return buffer?.length ? buffer[buffer.length - 1].progress : 0
   }
 
-  return { syncRoom, onSnapshot, update, progressOf }
+  // Sesi çıkacak rakipler: çizilen arabanın konumu ve son bilinen hızı (audio.js: uzaklığa göre kısılan motor)
+  function voices() {
+    const list = []
+    for (const [id, p] of players) {
+      if (p.model.visible && p.buffer.length) list.push({ id, position: p.model.position, speed: p.buffer[p.buffer.length - 1].speed ?? 0 })
+    }
+    return list
+  }
+
+  return { syncRoom, onSnapshot, update, progressOf, voices }
 }

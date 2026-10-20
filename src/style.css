@@ -996,3 +996,26 @@ canvas { touch-action: none; }
   .landing-map small { display: none; }
   .landing-map-art { height: 36px; }
 }
+
+/* --- Ses aç/kapa (audio.js): sağ üst köşe, zincir paneli onun soluna kayar --- */
+.sound-toggle {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: 16px;
+  z-index: 11; /* lobi ve sonuç kartının (10) üstünde: her ekranda erişilebilsin */
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  background: rgba(8, 10, 22, 0.62);
+  backdrop-filter: blur(6px);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sound-toggle.off { opacity: 0.6; }
+.tx-panel { right: 64px; }
+@media (max-width: 640px) {
+  .sound-toggle { top: max(10px, env(safe-area-inset-top)); right: 10px; }
+  .tx-panel { right: 58px; }
+}

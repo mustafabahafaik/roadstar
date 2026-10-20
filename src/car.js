@@ -319,6 +319,9 @@ export function createCar(scene, smoke, events = {}) {
     model,
     frame,
     thrusters, // garaj: alev rengi ve önizleme (parts.js)
+    get thrust() {
+      return thrustPower // roket gücü 0–1 (audio.js: itici "fışş"ının şiddeti)
+    },
     setGravityScale: (scale) => (gravityScale = scale), // race.js: yarış başlarken haritaya göre
     state,
     velocity,
