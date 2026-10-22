@@ -125,6 +125,24 @@ contract GaragePartsTest is Test {
     // İpucu: PURPLE 0.02 ether. Eksik (0.01) ve fazla (0.03) gönderince WrongPrice(gönderilen, beklenen)
     //        beklenmeli; hiç para göndermeden de dene. Sonunda alice'in PURPLE bakiyesi hâlâ 0 olmalı
     function test_buy_wrongPrice_reverts() public {
-        vm.skip(true, "TODO: Mustafa yazacak");
+        // Eksik
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(GarageParts.WrongPrice.selector, 0.01 ether, 0.02 ether));
+        garage.buy{value: 0.01 ether}(PURPLE);
+
+        // Fazla
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(GarageParts.WrongPrice.selector, 0.03 ether, 0.02 ether));
+        garage.buy{value: 0.03 ether}(PURPLE);
+
+        // Hiç para göndermeden
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(GarageParts.WrongPrice.selector, 0, 0.02 ether));
+        garage.buy(PURPLE);
+
+        // Hiçbiri mint etmedi, para da kontrata girmedi
+        assertEq(garage.balanceOf(alice, PURPLE), 0);
+        assertEq(address(garage).balance, 0);
+        assertEq(alice.balance, 1 ether);
     }
 }

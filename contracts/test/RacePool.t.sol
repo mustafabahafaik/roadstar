@@ -147,14 +147,42 @@ contract RacePoolTest is Test {
     // İpucu: odayı doldur, geçerli imzayla bir kez settle et, ikinci çağrıda
     //        AlreadySettled(roomId) bekle (Test 3'teki expectRevert + abi.encodeWithSelector kalıbı)
     function test_settle_twice_reverts() public {
-        vm.skip(true, "TODO: Mustafa yazacak");
+        _fillRoom();
+        address[] memory ranking = _ranking(alice, bob, carol);
+        bytes memory sig = _sign(SIGNER_KEY, roomId, ranking);
+
+        pool.settle(roomId, ranking, sig); // ilk settle geçer
+        assertEq(pool.claimable(alice), 2.4 ether);
+
+        // Aynı imzayla ikinci kez: alacaklar iki kez yazılsaydı havuzdan fazlası dağıtılırdı
+        vm.expectRevert(abi.encodeWithSelector(RacePool.AlreadySettled.selector, roomId));
+        pool.settle(roomId, ranking, sig);
+        assertEq(pool.claimable(alice), 2.4 ether, "alacak ikiye katlanmadi");
     }
 
     // Test 5: yanlış ücretle katılınamaz
     // İpucu: pool.joinRoom{value: 0.5 ether}(roomId) → WrongFee(gönderilen, beklenen).
     //        Fazlası da (2 ether) reddedilmeli. vm.prank'i unutma
     function test_join_wrongFee_reverts() public {
-        vm.skip(true, "TODO: Mustafa yazacak");
+        // Eksik ücret
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RacePool.WrongFee.selector, 0.5 ether, FEE));
+        pool.joinRoom{value: 0.5 ether}(roomId);
+
+        // Fazla ücret de reddedilir: kontrat para üstü vermez, tam tutar ister
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RacePool.WrongFee.selector, 2 ether, FEE));
+        pool.joinRoom{value: 2 ether}(roomId);
+
+        // Hiç para göndermeden
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RacePool.WrongFee.selector, 0, FEE));
+        pool.joinRoom(roomId);
+
+        // Revert olan işlemler hiçbir şey değiştirmez: alice odada değil, kontratta para yok
+        assertFalse(pool.joined(roomId, alice));
+        assertEq(address(pool).balance, 0);
+        assertEq(alice.balance, 10 ether);
     }
 
     // Test 6: oda 10 dakikada dolmazsa iade
@@ -162,6 +190,36 @@ contract RacePoolTest is Test {
     //        vm.warp(block.timestamp + pool.JOIN_WINDOW()) ile zamanı ilerlet, alice iade alsın:
     //        bakiyesi FEE kadar artmalı, ikinci iade NotInRoom vermeli, carol artık giremez (JoinWindowClosed)
     function test_refund_afterJoinWindow() public {
-        vm.skip(true, "TODO: Mustafa yazacak");
+        _join(alice);
+        _join(bob); // 3 kişilik oda, carol gelmedi → oda hiç başlamaz
+
+        // Süre dolmadan iade yok
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RacePool.RefundNotAvailable.selector, roomId));
+        pool.refund(roomId);
+
+        // 10 dakika ileri sar
+        vm.warp(block.timestamp + pool.JOIN_WINDOW());
+
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        pool.refund(roomId);
+        assertEq(alice.balance, before + FEE, "alice ucretini geri aldi");
+        assertEq(address(pool).balance, FEE, "sadece bob'un ucreti kaldi");
+
+        // İkinci iade: alice artık odada sayılmıyor
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(RacePool.NotInRoom.selector, roomId, alice));
+        pool.refund(roomId);
+
+        // Süresi dolmuş odaya yeni oyuncu giremez (yoksa iade sırasında oda dolabilirdi)
+        vm.prank(carol);
+        vm.expectRevert(abi.encodeWithSelector(RacePool.JoinWindowClosed.selector, roomId));
+        pool.joinRoom{value: FEE}(roomId);
+
+        // bob da kendi parasını alabilir, kontrat boşalır
+        vm.prank(bob);
+        pool.refund(roomId);
+        assertEq(address(pool).balance, 0);
     }
 }
