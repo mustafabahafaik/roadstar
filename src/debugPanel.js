@@ -1,11 +1,12 @@
 import { DEBUG } from './settings.js'
 
-// F3 hata ayıklama paneli: kamera ve araba durumu. Kamera donma hatası tekrar olursa ekran görüntüsü alınsın diye.
+// F3 hata ayıklama paneli: kamera, araba ve ağ durumu. Bir hata tekrar olursa ekran görüntüsü alınsın diye.
 // Telefonda F3 yok: adrese ?debug ekleyince panel açık başlar (?debug düşme sınırı çizgilerini de gösterir)
 const REFRESH = 0.1 // saniyede 10 kez yaz: her karede DOM'a yazmak boşuna iş
 const FAR = 60 // cameraModes.js'teki emniyet kemeri sınırı: üstündeyse ⚠
 
-export function createDebugPanel({ car, camera, cameraModes, gameState, router, isOrbitEnabled }) {
+// getNetStats: rakip başına ağ ölçümleri (remotePlayers.js), getPing: sunucuya gidiş-dönüş (ms)
+export function createDebugPanel({ car, camera, cameraModes, gameState, router, isOrbitEnabled, getNetStats, getPing }) {
   const el = document.createElement('pre')
   el.className = 'debug-panel'
   el.hidden = !DEBUG
@@ -50,7 +51,23 @@ export function createDebugPanel({ car, camera, cameraModes, gameState, router, 
       `kurtarma   ${stats.rescues}${stats.rescues ? ' ⚠ (konsola bak)' : ''}`,
       `kamera  ${vec(camera.position)}`,
       `araba   ${vec(car.model.position)}`,
+      ...netLines(),
     ].join('\n')
+  }
+
+  // Ağ: rakip başına saniyedeki paket, son 2 sn'deki en büyük boşluk, buffer uzunluğu, oynatma gecikmesi
+  // ve şu an tahmin (dead reckoning) modunda mı. 20 paket/sn normal; boşluk 50 ms civarı iyi
+  function netLines() {
+    const players = getNetStats()
+    if (!players.length) return []
+    const ping = getPing()
+    const lines = ['', `AĞ · ping ${ping === null ? '-' : `${ping} ms`}`, 'rakip         pk/sn boşluk buf gecikme']
+    for (const p of players) {
+      const name = p.name.length > 12 ? `${p.name.slice(0, 11)}…` : p.name.padEnd(12)
+      const mode = p.predicting ? `  TAHMİN +${p.predictedMs.toFixed(0)}ms` : p.correction > 0.05 ? `  düzeltme ${p.correction.toFixed(1)}` : ''
+      lines.push(`${name} ${String(p.hz).padStart(5)} ${p.maxGap.toFixed(0).padStart(6)} ${String(p.buffer).padStart(3)} ${p.delay.toFixed(0).padStart(7)}${mode}`)
+    }
+    return lines
   }
 
   return { update }

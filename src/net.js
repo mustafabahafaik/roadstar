@@ -10,6 +10,20 @@ const CLOCK_SAMPLES = 5 // saat eşitlemede kaç ping/pong
 const CLOCK_RESYNC_MS = 10000 // saatler zamanla kayar: arada bir yeniden eşitle
 const CONNECT_TIMEOUT_MS = 4000
 
+// Test için yapay kötü ağ: ?lag=120&jitter=80 → bu sekmeye gelen rakip durumları 120 ms + 0–80 ms rastgele
+// gecikir (sıra korunur, TCP gibi). DevTools'un ağ kısıtlaması sabit gecikme ekler, dalgalanma (jitter) eklemez
+const params = new URLSearchParams(window.location.search)
+const FAKE_LAG = Math.max(0, Number(params.get('lag')) || 0)
+const FAKE_JITTER = Math.max(0, Number(params.get('jitter')) || 0)
+function withFakeLag(listener) {
+  let lastAt = 0
+  return (data) => {
+    const at = Math.max(lastAt, performance.now() + FAKE_LAG + Math.random() * FAKE_JITTER) // öncekini geçemez
+    lastAt = at
+    setTimeout(() => listener(data), at - performance.now())
+  }
+}
+
 // Çok oyunculu bağlantı: sunucuyla tüm konuşma buradan geçer
 export function createNet() {
   const socket = io(SERVER_URL, { autoConnect: false, reconnection: false })
@@ -80,7 +94,7 @@ export function createNet() {
     // "joinRoom yaptım": sunucu zincirden doğrular (birkaç kez deneyebilir, süre uzun)
     chainJoined: (roomId) => socket.timeout(15000).emitWithAck('chainJoined', { roomId }),
     setReady: (ready) => socket.emit('ready', ready),
-    // volatile: bağlantı o an meşgulse bu paketi at, 66 ms sonra yenisi zaten gelecek
+    // volatile: bağlantı o an meşgulse bu paketi at, 50 ms sonra yenisi zaten gelecek
     sendState: (state) => socket.volatile.emit('state', state),
     // Son durum volatile DEĞİL: sunucu bitişi kabul etmek için son ilerlemeyi mutlaka görmeli
     finish: (finalState) => {
@@ -88,6 +102,6 @@ export function createNet() {
       socket.emit('finish')
     },
     dnf: () => socket.emit('dnf'),
-    on: (event, listener) => socket.on(event, listener),
+    on: (event, listener) => socket.on(event, event === 'peer' && (FAKE_LAG || FAKE_JITTER) ? withFakeLag(listener) : listener),
   }
 }

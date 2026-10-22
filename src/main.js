@@ -227,7 +227,16 @@ gameState.onChange((next) => {
 })
 
 // F3: kamera ve araba durumu paneli (debugPanel.js). Telefonda adrese ?debug ekle
-const debugPanel = createDebugPanel({ car, camera, cameraModes, gameState, router, isOrbitEnabled: () => controls.enabled })
+const debugPanel = createDebugPanel({
+  car,
+  camera,
+  cameraModes,
+  gameState,
+  router,
+  isOrbitEnabled: () => controls.enabled,
+  getNetStats: () => race.netStats(),
+  getPing: () => net.rtt,
+})
 
 // Kayan yıldızlar ve meteorlar (meteors.js, SADECE GÖRSEL): sadece haritanın "meteors" ayarı varsa (Satürn)
 const meteors = createMeteors({

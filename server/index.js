@@ -226,7 +226,7 @@ async function maybeStart(room) {
   for (const p of players) {
     p.status = p.left ? 'dnf' : 'racing' // ödeyip lobide kopan: yarışa DNF başlar (koltuğu zincirde dolu)
     p.ready = false
-    p.state = null
+    p.lastSentAt = 0
     p.last = { progress: 0, time: room.startAt }
     p.finishMs = null
   }
@@ -283,7 +283,7 @@ async function endRace(room) {
   for (const p of [...room.players.values()]) {
     if (p.left) room.players.delete(p.id) // kopanlar sonuçta göründü, artık listeden çıkar
     p.status = 'lobby'
-    p.state = null
+    p.lastSentAt = 0
     p.paid = false
     p.ready = false
   }
@@ -361,7 +361,7 @@ io.on('connection', (socket) => {
       paid: false,
       ready: false,
       status: 'lobby',
-      state: null,
+      lastSentAt: 0, // son iletilen durumun sentAt'ı (alıcıya zaman hep ileri aksın)
       last: { progress: 0, time: 0 },
       finishMs: null,
       left: false,
@@ -448,7 +448,9 @@ io.on('connection', (socket) => {
     maybeStart(room)
   })
 
-  // Oyuncunun durumu (saniyede 15 kez). Kontrol edip saklarız; odaya tick döngüsü yayar
+  // Oyuncunun durumu (saniyede 20 kez). Kontrol edip BEKLETMEDEN odadaki diğerlerine iletiriz.
+  // Eskiden 15 Hz'lik ayrı bir döngü toplu yayıyordu: iki saat senkron olmadığı için bazı durumlar
+  // eziliyor, 130+ ms boşluk oluşuyordu; üstelik her durum döngüyü beklerken 0–66 ms daha eskiyordu
   socket.on('state', (s) => {
     if (!room || room.status !== 'racing' || player.status !== 'racing' || !s) return
     const now = Date.now()
@@ -468,8 +470,18 @@ io.on('connection', (socket) => {
       return // durumu kabul etme: diğerleri onu eski yerinde görür
     }
     player.last = { progress, time: now }
-    // rt (receive time): sunucunun aldığı an. Alıcılar interpolasyonu bu ortak zaman çizgisinde yapar
-    player.state = { x: s.x, y: s.y, z: s.z, rotation: s.rotation.slice(0, 4), speed: s.speed, progress, rt: now }
+
+    // sentAt: oyuncunun ortak saatle gönderdiği an (alıcı interpolasyonu buna göre yapar). Sadece ÇİZİM için:
+    // hile kontrolü yukarıda bizim saatimizle yapıldı. Saçma bir değer (saat bozuk, hile) gelirse aldığımız an
+    let sentAt = isNum(s.sentAt) && s.sentAt > now - 1000 && s.sentAt < now + 250 ? Math.round(s.sentAt) : now
+    if (sentAt <= player.lastSentAt) sentAt = player.lastSentAt + 1 // zaman geriye gitmesin (saat yeniden eşitlenince)
+    player.lastSentAt = sentAt
+    // Sadece doğrulanmış alanlar (istemcinin nesnesini olduğu gibi yaymıyoruz). u / off / h: pist üzerindeki
+    // konum, alıcının tahmini için. Eski sürüm göndermezse alıcı düz çizgide tahmin eder
+    const peer = { id: player.id, sentAt, x: s.x, y: s.y, z: s.z, rotation: s.rotation.slice(0, 4), speed: s.speed, progress }
+    if ([s.u, s.off, s.h].every(isNum)) Object.assign(peer, { u: s.u, off: s.off, h: s.h })
+    // volatile: alıcının bağlantısı o an meşgulse bu paketi at (50 ms sonra yenisi gelecek, eskisi işe yaramaz)
+    socket.to(room.id).volatile.emit('peer', peer)
   })
 
   socket.on('finish', () => {
@@ -530,8 +542,7 @@ io.on('connection', (socket) => {
   })
 })
 
-// --- Tick döngüsü: saniyede 15 kez, yarışan her odaya tüm oyuncuların son durumunu gönder ---
-// volatile: alıcı o an meşgulse bu paketi at (eski konumu sonradan göndermenin anlamı yok, yenisi geliyor)
+// --- Bakım döngüsü: lobi zamanlayıcıları, botlar, yarış zaman aşımı. Durum yaymaz ('state' anında iletir) ---
 setInterval(() => {
   const now = Date.now()
   for (const room of rooms.values()) {
@@ -540,11 +551,6 @@ setInterval(() => {
     if (room.status === 'lobby' && room.chain) releaseExpiredChain(room)
     if (room.status === 'lobby' && room.players.size === 0 && !room.chain) rooms.delete(room.id)
     if (room.status !== 'racing') continue
-    const players = []
-    for (const p of room.players.values()) {
-      if (p.state && !p.left) players.push({ id: p.id, status: p.status, ...p.state })
-    }
-    io.to(room.id).volatile.emit('snapshot', { t: now, players })
     maybeEnd(room) // zaman aşımı kontrolü
   }
 }, 1000 / TICK_RATE)

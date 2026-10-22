@@ -17,7 +17,7 @@
 ## Ne yapıyor?
 
 - **Yarış:** 3000 metrelik pist, bitiş kapısı. Parkur (engeller, rampalar) tek bir **seed**'den üretiliyor: aynı seed herkes için birebir aynı pist.
-- **Çok oyunculu:** 5 kişiye kadar oda. Sunucu herkese aynı seed'i ve aynı başlangıç anını gönderiyor (ping/pong saat eşitleme). Durumlar saniyede 15 kez gidip geliyor, rakipler ~150 ms geriden interpolasyonla çiziliyor.
+- **Çok oyunculu:** 5 kişiye kadar oda. Sunucu herkese aynı seed'i ve aynı başlangıç anını gönderiyor (ping/pong saat eşitleme). Durumlar saniyede 20 kez gönderiliyor ve sunucu her birini beklemeden odadakilere iletiyor. Rakipler gönderildikleri ortak saate göre biraz geriden interpolasyonla çiziliyor; bu gecikme ağın dalgalanmasına göre kendini ayarlıyor. Paket gecikirse araba donmuyor: son hızıyla pist boyunca tahmin ediliyor (dead reckoning).
 - **Botlar:** Oda 20 sn'de dolmazsa boş koltuklara botlar geliyor. Botlar insanlarla aynı protokolü kullanıyor ve ücretli odada kendi cüzdanlarıyla gerçekten ödeme yapıyor.
 - **Zincirde:**
   - Yarış seed'i zincirden geliyor (önceden bilinemez).

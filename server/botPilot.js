@@ -190,6 +190,9 @@ export function createDriver(seed, topSpeed, gravityScale = 1) {
       speed: s.speed,
       progress: s.distance / trackLength,
       status: 'racing',
+      u, // pist üzerindeki konum: alıcı paket gecikince bununla tahmin yürütür (src/remoteMotion.js)
+      off: s.offset,
+      h: s.height,
     }
   }
 
@@ -289,7 +292,7 @@ export function createBotPilot({ serverUrl, room, name, key, provider, poolAddre
       const dt = last ? Math.min((now - last) / 1000, 0.2) : 1 / SEND_RATE // gerçek geçen süre: zamanlayıcı gecikse de hız aşılmaz
       last = now
       const state = driver.step(dt)
-      socket.emit('state', { ...state, t: now - startAt })
+      socket.emit('state', { ...state, t: now - startAt, sentAt: Math.round(now) }) // sentAt: ortak saatle gönderildiği an
       if (driver.finished()) {
         clearInterval(timer)
         socket.emit('finish')

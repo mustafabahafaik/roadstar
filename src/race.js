@@ -135,6 +135,10 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     progress: 0, // 0 → 1: pistin ne kadarı bitti (sıralama bununla yapılır)
     status: gameState.current,
     t: 0, // yarış başından beri ms
+    // Pist üzerindeki konum: rakipler paket gecikince bununla tahmin yürütür (remoteMotion.js)
+    u: 0, // turun neresinde (0 → 1)
+    offset: 0, // yandaki konum
+    height: 0, // yoldan yükseklik
   }
 
   // --- Bitiş kapısı ---
@@ -207,7 +211,7 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
   })
   // Sunucu seed ile birlikte haritayı da gönderir: odadaki herkes aynı parkuru AYNI haritada görür
   net.on('start', ({ seed, startAt: at, map }) => beginCountdown({ seed, startAt: at, multiplayer: true, map }))
-  net.on('snapshot', (snapshot) => remote.onSnapshot(snapshot))
+  net.on('peer', (state) => remote.onState(state)) // rakibin durumu: sunucu beklemeden iletir
   net.on('results', ({ standings, settlement: signed }) => {
     finalStandings = standings
     settlement = signed
@@ -464,6 +468,12 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
       rotation: playerState.rotation.map((v) => r(v, 4)),
       speed: r(playerState.speed, 1),
       progress: r(playerState.progress, 4),
+      // Ortak saatle (sunucu saati) GÖNDERİLDİĞİ an: alıcı durumu ağın getirdiği ana değil, gerçekten
+      // olduğu ana yerleştirir → dalgalanan ağ gecikmesi rakibin hızını dalgalandırmaz
+      sentAt: Math.round(net.serverNow()),
+      u: r(playerState.u, 6), // 3000 birimlik pistte 0.003 birim
+      off: r(playerState.offset, 2),
+      h: r(playerState.height, 2),
     }
   }
 
@@ -479,6 +489,9 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     playerState.rotation[2] = q.z
     playerState.rotation[3] = q.w
     playerState.speed = car.state.speed
+    playerState.u = car.state.u
+    playerState.offset = car.state.offset
+    playerState.height = car.state.height
     playerState.progress = car.progress()
     playerState.status = gameState.current
     playerState.t = Math.round(elapsedMs)
@@ -519,12 +532,12 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     refreshPlayerState()
 
     if (multiplayer) {
-      // Saniyede SEND_RATE (15) kez durumu sunucuya gönder
+      // Saniyede SEND_RATE (20) kez durumu sunucuya gönder
       if (racing && (sendTimer -= realDt) <= 0) {
         sendTimer = Math.max(0, sendTimer + 1 / SEND_RATE)
         net.sendState(toNetwork())
       }
-      remote.update()
+      remote.update(realDt)
       if ((standingsTimer -= realDt) <= 0) {
         standingsTimer = STANDINGS_EVERY
         renderStandings()
@@ -541,5 +554,5 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     }
   }
 
-  return { race, update, finish, playerState, toNetwork, remoteVoices: () => remote.voices(), get items() { return items } }
+  return { race, update, finish, playerState, toNetwork, remoteVoices: () => remote.voices(), netStats: () => remote.stats(), get items() { return items } }
 }

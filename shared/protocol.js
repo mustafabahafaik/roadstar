@@ -6,10 +6,11 @@ export const MAX_PLAYERS = 5 // bir odada en fazla
 export const MIN_PLAYERS = 2 // "herkes hazır" ile başlamak için en az (tek kişi: lobide "Tek başına")
 export const COUNTDOWN_MS = 3000 // sunucu "şu kadar ms sonra başla" der
 
-// Tick rate: saniyede kaç kez durum gönderilir. 60 yerine 15: ağ trafiği 4 kat az,
-// aradaki kareleri alıcı interpolasyonla (ara değerleme) kendisi doldurur
-export const SEND_RATE = 15 // oyuncu → sunucu
-export const TICK_RATE = 15 // sunucu → odadaki herkes
+// Saniyede kaç kez durum gönderilir. 60 yerine 20: ağ trafiği 3 kat az, aradaki kareleri alıcı
+// interpolasyonla (ara değerleme) kendisi doldurur. Sunucu her durumu beklemeden odadakilere iletir
+export const SEND_RATE = 20 // oyuncu → sunucu → odadaki diğerleri
+// Sunucunun oda bakım döngüsü (lobi zamanlayıcıları, botlar, zaman aşımı). Durum YAYMAZ: o artık anında
+export const TICK_RATE = 15
 
 // Hile kontrolü: pist boyunca en yüksek hız. car.js MAX_SPEED 70 × boost 2 = 140
 export const MAX_TRACK_SPEED = 140 // birim / saniye
