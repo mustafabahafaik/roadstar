@@ -434,7 +434,42 @@ canvas {
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
   pointer-events: none;
 }
-.race-time { min-width: 76px; }
+.race-time { position: relative; min-width: 76px; }
+/* Düşünce saatin altında: "+2 sn" (kırmızı) ya da "KALKAN" (yeşil), yukarı kayarak söner */
+.race-penalty {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 2px;
+  color: #ff5a6e;
+  font-style: normal;
+  font-size: 15px;
+  opacity: 0;
+  pointer-events: none;
+}
+.race-penalty.saved { color: #3dff8a; }
+.race-penalty.show { animation: race-penalty 1.8s ease-out; }
+@keyframes race-penalty {
+  0% { opacity: 0; transform: translateY(6px) scale(0.9); }
+  12% { opacity: 1; transform: translateY(0) scale(1.15); }
+  70% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+/* Yarıştan çık: HUD tıklamaları geçirir, bu düğme yakalar. İlk basışta "Çık?" (kırmızı) */
+.race-quit {
+  pointer-events: auto;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid rgba(230, 234, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(8, 10, 22, 0.6);
+  color: #e6eaff;
+  font: 700 12px system-ui, 'Segoe UI', sans-serif;
+  cursor: pointer;
+}
+.race-quit.armed { border-color: #ff5a6e; background: rgba(255, 60, 90, 0.35); }
+body[data-screen='results'] .race-quit { display: none; }
 .race-percent { min-width: 38px; text-align: right; }
 .race-bar {
   position: relative;

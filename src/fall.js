@@ -8,7 +8,11 @@ import { DEBUG } from './settings.js'
 // --- Ayarlar ---
 const SLOW_MOTION = 0.25 // düşerken zaman ölçeği (1 = normal, 0.25 = dört kat yavaş)
 const SLOWMO_EASE = 5 // zaman ölçeğinin yumuşak geçiş hızı (gerçek zamanda)
-const FALL_DURATION = 2 // düşüş sahnesi kaç GERÇEK saniye sürsün
+// Düşmek yarışı bitirmez: araba pistin gerisinde yeniden doğar, ceza kaybedilen ZAMAN.
+// Kalkansız: 2 sn ağır çekim + 40 birim geride, yavaş doğma → toplam ~3 sn kayıp.
+// Kalkanla: kalkan gider, kısa sahne, araba düştüğü yerde hızını koruyarak pistin ortasına konur
+export const FALL_DURATION = 2 // kalkansız düşüş sahnesi kaç GERÇEK saniye sürsün (HUD'daki "+2 sn")
+const SAVE_DURATION = 0.5 // kalkan kurtarınca sahne bu kadar kısa
 const SPIN_SPEED = { flip: 1.8, roll: 0.8 } // düşerken dönüş hızı (rad/sn, oyun zamanı)
 const PUFF_INTERVAL = 0.22 // kesik kesik duman: kaç oyun saniyesinde bir püskürsün
 const PUFFS_PER_BURST = 6
@@ -81,8 +85,8 @@ function createEdgeWarning(scene, car) {
 }
 
 // getItems: envanterdeki kalkanı harcamak için (items geri sayımdan sonra oluşur)
-// onMessage: ekrana yazı (main.js → showMessage)
-export function createFall({ car, smoke, scene, gameState, cameraModes, getItems, onMessage }) {
+// onMessage: ekrana yazı (main.js → showMessage). onFallStart({ saved, penalty }): race.js HUD'da "+2 sn" yakar
+export function createFall({ car, smoke, scene, gameState, cameraModes, getItems, onMessage, onFallStart }) {
   const vignette = document.createElement('div')
   vignette.className = 'fall-vignette' // kenarları karartan katman (style.css)
   document.body.appendChild(vignette)
@@ -94,47 +98,49 @@ export function createFall({ car, smoke, scene, gameState, cameraModes, getItems
   let realTimer = 0 // kalan GERÇEK süre
   let timeScale = 1
   let puffTimer = 0
-  let raceOver = false
+  let saved = false // bu düşüşü kalkan mı kurtardı
   let clock = 0 // gerçek zaman sayacı (yanıp sönme için)
+  const stats = { falls: 0, saves: 0 } // sonuç ekranı: kaç kez düştü, kaçını kalkan kurtardı
   const spinSign = { flip: 1, roll: 1 }
   const delta = new THREE.Quaternion()
   const position = new THREE.Vector3()
   const velocity = new THREE.Vector3()
   const down = new THREE.Vector3()
 
-  // Ceza: önce açık kalkan, yoksa envanterdeki kalkan; ikisi de yoksa yarış biter
-  function applyPenalty() {
+  // Kalkan var mı? Önce açık kalkan, yoksa envanterdeki. Varsa harcanır → ceza yok
+  function useShield() {
     if (car.state.shield) {
       car.state.shield = false
-      return 'KALKAN GİTTİ'
+      return true
     }
-    if (getItems()?.consumeShield()) return 'KALKAN GİTTİ'
-    raceOver = true
-    return 'KALKAN YOK, YARIŞ BİTTİ'
+    return Boolean(getItems()?.consumeShield())
   }
 
   // car.js "altında yol yok" deyince çağrılır (main.js → car events.onFall)
   function start() {
     if (active || !gameState.set(GAME_STATE.FALLING)) return // sadece yarış sırasında
     active = true
-    realTimer = FALL_DURATION
+    saved = useShield()
+    realTimer = saved ? SAVE_DURATION : FALL_DURATION
     puffTimer = 0
-    raceOver = false
+    stats.falls++
+    if (saved) stats.saves++
     spinSign.flip = Math.random() < 0.5 ? -1 : 1
     spinSign.roll = Math.random() < 0.5 ? -1 : 1
     cameraModes.setMode('fall', { side: Math.sign(car.state.offset) || 1 })
     vignette.classList.add('show')
-    onMessage(`DÜŞTÜN! · ${applyPenalty()}`)
+    onMessage(saved ? 'KALKAN KURTARDI!' : `DÜŞTÜN! +${FALL_DURATION} sn`)
+    onFallStart?.({ saved, penalty: saved ? 0 : FALL_DURATION })
   }
 
+  // Düşüş sahnesi bitti: yarışa dön (DNF yok), yeniden doğ
   function end(respawn) {
     active = false
     vignette.classList.remove('show')
     cameraModes.setMode('chase')
-    if (raceOver) gameState.set(GAME_STATE.DNF) // kalkan yoktu: bitiremedi
-    else gameState.set(GAME_STATE.RACING)
-    if (respawn) car.respawnAfterFall() // pistin ortası, biraz geride; 1.5 sn yanıp sönerek dokunulmaz
-    if (raceOver) car.endRace('dnf')
+    gameState.set(GAME_STATE.RACING)
+    // Kalkan kurtardıysa düştüğü yerde, hızını koruyarak; yoksa 40 birim geride. 1.5 sn yanıp sönerek dokunulmaz
+    if (respawn) car.respawnAfterFall({ saved })
   }
 
   // Kesik kesik duman: tekerlek iticilerinden kısa bir püskürme
@@ -184,6 +190,7 @@ export function createFall({ car, smoke, scene, gameState, cameraModes, getItems
   return {
     start,
     update,
+    stats,
     get timeScale() {
       return timeScale
     },

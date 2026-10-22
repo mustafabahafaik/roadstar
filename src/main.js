@@ -106,7 +106,7 @@ const car = createCar(scene, smoke, {
     audio.explosion() // ağır çekim başlarken: patlama da yavaşlayıp pesleşir
   },
   onShieldBlock: () => showMessage('KALKAN!'),
-  // reason: 'lap' (bitiş kapısı) | 'dnf' (kalkansız düştü → zincire finishRace gitmez). race.js sonucu gösterir
+  // reason: 'lap' (bitiş kapısı) | 'quit' / 'timeout' / 'disconnect' (DNF → zincire finishRace gitmez). race.js sonucu gösterir
   onFinish: (reason) => race.finish(reason),
 })
 
@@ -161,6 +161,7 @@ const race = createRace({
   getLoadout: () => loadout,
   audio,
   getScore: () => tricks.score,
+  getFallStats: () => fall.stats, // fall aşağıda oluşuyor: ilk çağrı yarış sonunda
   showMessage,
   holdMessage,
   // info: { id, seed, onChain }. İyimser arayüz: etki oyunda hemen uygulanır, işlem arkada gider
@@ -257,6 +258,7 @@ const fall = createFall({
   cameraModes,
   getItems: () => items,
   onMessage: (text) => showMessage(text),
+  onFallStart: (info) => race.flashPenalty(info), // saatin altında "+2 sn" ya da "KALKAN"
 })
 
 // Dokunmatik kontroller (touch.js): telefon / tablette ekranın altında yön, itici, boost, takla düğmeleri

@@ -78,6 +78,8 @@ export function createLobby({ net, chain, getLoadout, getMapId, onSolo, onBack }
       <li><kbd>Shift</kbd> boost</li>
       <li>havada <kbd>W</kbd><kbd>S</kbd><kbd>Q</kbd><kbd>E</kbd> takla</li>
       <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> kalkan / mıknatıs / rush</li>
+      <li>düşersen geride doğarsın (~3 sn kaybedersin); kalkan varsa yerinde</li>
+      <li><kbd>Esc</kbd> iki kez: yarıştan çık</li>
     </ul>`
   document.body.appendChild(el)
 

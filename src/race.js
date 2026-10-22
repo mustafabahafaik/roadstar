@@ -8,7 +8,7 @@ import { parseRaceStarted, explorerTx } from './chain.js'
 import { GAME_STATE } from './gameState.js'
 import { TOKEN_COUNT } from './items.js'
 import { neon } from './neon.js'
-import { COUNTDOWN_MS, SEND_RATE, rankPlayers } from '../shared/protocol.js'
+import { COUNTDOWN_MS, SEND_RATE, RACE_TIMEOUT_MS, rankPlayers } from '../shared/protocol.js'
 import { createLobby } from './lobby.js'
 import { createRemotePlayers } from './remotePlayers.js'
 import { escapeHtml, toCssColor } from './html.js'
@@ -106,7 +106,15 @@ function enableShadows(group) {
 // getLoadout: garaj parçaları (odaya girerken sunucuya gider, rakipler arabamızı böyle görür)
 // world: harita değişimi (world.js). getMapId: giriş sayfasında seçilen harita (tek başına yarış + odaya katılırken)
 // audio: sesler (audio.js) — geri sayım bipleri, BAŞLA, bitiş fanfarı
-export function createRace({ scene, car, chain, gameState, net, router, world, getMapId, getLoadout, audio, onCourse, getScore, showMessage, holdMessage }) {
+// Sonuç ekranında DNF'in sebebi
+const DNF_TEXT = {
+  quit: 'Yarıştan çıktın',
+  timeout: `Süre doldu (${RACE_TIMEOUT_MS / 60000} dk)`,
+  disconnect: 'Sunucu bağlantısı koptu',
+}
+
+// getFallStats: { falls, saves } (fall.js) → sonuç ekranında "3 düşüş"
+export function createRace({ scene, car, chain, gameState, net, router, world, getMapId, getLoadout, audio, onCourse, getScore, getFallStats, showMessage, holdMessage }) {
   const race = { id: null, seed: null, onChain: false } // zincirdeki yarış numarası ve token seed'i
   let items = null
   let multiplayer = false
@@ -153,13 +161,47 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
   const progressHud = document.createElement('div')
   progressHud.className = 'race-progress'
   progressHud.innerHTML = `
-    <span class="race-time">00:00.000</span>
+    <span class="race-time">00:00.000<em class="race-penalty"></em></span>
     <div class="race-bar"><div class="race-fill"></div><span class="race-flag">🏁</span></div>
-    <span class="race-percent">%0</span>`
+    <span class="race-percent">%0</span>
+    <button class="race-quit" title="Yarıştan çık (Esc)">✕</button>`
   document.body.appendChild(progressHud)
   const fillEl = progressHud.querySelector('.race-fill')
   const percentEl = progressHud.querySelector('.race-percent')
   const timeEl = progressHud.querySelector('.race-time')
+  const timeText = timeEl.firstChild // sadece süre yazısı (yanındaki "+2 sn" etiketi silinmesin)
+  const penaltyEl = progressHud.querySelector('.race-penalty')
+  const quitButton = progressHud.querySelector('.race-quit')
+
+  // Düşünce saatin altında kısa uyarı: kalkansız "+2 sn" (kırmızı), kalkan kurtardıysa "KALKAN" (yeşil). fall.js çağırır
+  function flashPenalty({ saved, penalty }) {
+    penaltyEl.textContent = saved ? 'KALKAN' : `+${penalty} sn`
+    penaltyEl.classList.toggle('saved', saved)
+    penaltyEl.classList.remove('show')
+    void penaltyEl.offsetWidth // animasyon baştan başlasın
+    penaltyEl.classList.add('show')
+  }
+
+  // "Yarıştan çık" (✕ ya da Esc): yanlışlıkla basılmasın diye iki adım. İlk basış sorar, 3 sn içinde ikincisi çıkar.
+  // Çıkan DNF olur (zincire finishRace gitmez), sıralamada ilerlemesiyle en sonda görünür
+  let quitArmedUntil = 0
+  function requestQuit() {
+    if (finishReason || !(gameState.is(GAME_STATE.RACING) || gameState.is(GAME_STATE.FALLING))) return // yarışta değil
+    if (performance.now() < quitArmedUntil) return car.endRace('quit')
+    quitArmedUntil = performance.now() + 3000
+    quitButton.textContent = 'Çık?'
+    quitButton.classList.add('armed')
+    showMessage('Çıkmak için tekrar bas')
+    setTimeout(() => {
+      if (performance.now() < quitArmedUntil) return
+      quitButton.textContent = '✕'
+      quitButton.classList.remove('armed')
+    }, 3050)
+  }
+  quitButton.addEventListener('click', requestQuit)
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Escape' && !e.repeat && router.current === 'race') requestQuit()
+  })
 
   // --- HUD: sol üstte canlı sıralama (sadece çok oyunculu) ---
   const standingsHud = document.createElement('div')
@@ -212,13 +254,19 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
   // Sunucu seed ile birlikte haritayı da gönderir: odadaki herkes aynı parkuru AYNI haritada görür
   net.on('start', ({ seed, startAt: at, map }) => beginCountdown({ seed, startAt: at, multiplayer: true, map }))
   net.on('peer', (state) => remote.onState(state)) // rakibin durumu: sunucu beklemeden iletir
+  const racingNow = () => gameState.is(GAME_STATE.RACING) || gameState.is(GAME_STATE.FALLING)
   net.on('results', ({ standings, settlement: signed }) => {
     finalStandings = standings
     settlement = signed
+    // Biz hâlâ yarışırken sonuç geldiyse sunucu bizi DNF saydı: 5 dk doldu. Sonuç ekranı açılsın (eskiden açılmıyordu)
+    if (!finishReason && racingNow()) car.endRace('timeout')
     if (finishReason) renderResults()
   })
   net.on('disconnect', () => {
-    if (multiplayer && !finishReason) showMessage('SUNUCU BAĞLANTISI KOPTU')
+    if (!multiplayer || finishReason) return
+    showMessage('SUNUCU BAĞLANTISI KOPTU')
+    // Yeniden bağlanma yok ve sunucu bizi DNF saydı: boşuna sürdürme, sonucu göster
+    if (racingNow()) car.endRace('disconnect')
   })
 
   // --- Geri sayım: parkuru kur, startAt anını bekle (update içinde) ---
@@ -264,7 +312,8 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     items = onCourse(race.seed, label, race)
   }
 
-  // --- Bitiş: car.js endRace → main.js → buraya. reason: 'lap' (kapıdan geçti) | 'dnf' ---
+  // --- Bitiş: car.js endRace → main.js → buraya. reason: 'lap' (kapıdan geçti) ya da DNF sebebi:
+  // 'quit' (yarıştan çıktı) | 'timeout' (5 dk doldu) | 'disconnect' (bağlantı koptu). Düşmek DNF değil ---
   function finish(reason) {
     if (finishReason) return
     finishReason = reason
@@ -283,6 +332,13 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     renderResults()
     results.classList.add('show')
     router.go('results')
+  }
+
+  // "3 düşüş (1'ini kalkan kurtardı)" / "Düşüş yok"
+  function fallText() {
+    const { falls, saves } = getFallStats()
+    if (!falls) return 'Düşüş yok'
+    return `<b>${falls}</b> düşüş${saves ? ` (kalkan kurtardı: ${saves})` : ''}`
   }
 
   // Bizim durumumuz sunucunun diliyle: 'finished' | 'dnf' | 'racing'
@@ -423,7 +479,7 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     const waiting = multiplayer && !finalStandings ? '<p class="tx-sub">Diğer oyuncular bekleniyor…</p>' : ''
     results.innerHTML = `
       <h2>${finished ? 'BİTİRDİN' : 'DNF'}</h2>
-      ${finished ? '' : '<p class="tx-sub">Kalkansız düştün: yarışı bitiremedin</p>'}
+      ${finished ? '' : `<p class="tx-sub">${DNF_TEXT[finishReason] ?? 'Yarışı bitiremedin'}</p>`}
       <div class="tx-metric">
         <span>${multiplayer ? `Sıralaman ${place}/${list.length} · ` : ''}Yarış süresi</span>
         <strong>${finished ? formatRaceTime(me.finishMs) : '—'}</strong>
@@ -432,7 +488,7 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
       <ol class="race-ranking">${rows}</ol>
       ${waiting}
       ${prizeHtml(list)}
-      <p class="tx-sub">Toplanan <b>${collected.length}/${TOKEN_COUNT}</b> · Altın <b>${collected.filter((c) => c.type === 4).length}</b> · Takla skoru <b>${getScore()}</b></p>
+      <p class="tx-sub">Toplanan <b>${collected.length}/${TOKEN_COUNT}</b> · Altın <b>${collected.filter((c) => c.type === 4).length}</b> · Takla skoru <b>${getScore()}</b> · ${fallText()}</p>
       <div class="tx-grid">
         <div><b>${s.sent}</b>gönderilen işlem</div>
         <div><b>${s.avgMs ?? '—'}${s.avgMs ? '<small> ms</small>' : ''}</b>ort. onay</div>
@@ -527,7 +583,7 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
       fillEl.style.width = width
       percentEl.textContent = `%${percent}`
     }
-    timeEl.textContent = formatRaceTime(Math.max(0, elapsedMs))
+    timeText.nodeValue = formatRaceTime(Math.max(0, elapsedMs))
 
     refreshPlayerState()
 
@@ -554,5 +610,5 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     }
   }
 
-  return { race, update, finish, playerState, toNetwork, remoteVoices: () => remote.voices(), netStats: () => remote.stats(), get items() { return items } }
+  return { race, update, finish, flashPenalty, playerState, toNetwork, remoteVoices: () => remote.voices(), netStats: () => remote.stats(), get items() { return items } }
 }

@@ -1,8 +1,8 @@
 // Oyunun durum makinesi: oyun aynı anda yalnızca BİR durumdadır, geçişler kurallıdır.
 //
-//   lobby ──Başlat──▶ countdown ──3-2-1──▶ racing ──kenardan düştü──▶ falling ──2 sn──▶ racing
-//                                            │                          └──kalkan yok──▶ dnf
-//                                            └──bitiş kapısı──▶ finished
+//   lobby ──Başlat──▶ countdown ──3-2-1──▶ racing ──kenardan düştü──▶ falling ──yeniden doğdu──▶ racing
+//                                            ├──bitiş kapısı──▶ finished
+//                                            └──çıktı / süre doldu / bağlantı koptu──▶ dnf
 //
 // Dağınık bayraklar (isFalling, isFinished...) yerine tek bir durum: "aynı anda hem düşüyor hem
 // bitmiş" gibi imkânsız karışımlar oluşamaz. Durum değişince dinleyicilere haber verilir.
@@ -12,7 +12,7 @@ export const GAME_STATE = {
   RACING: 'racing',
   FALLING: 'falling',
   FINISHED: 'finished', // bitiş kapısından geçti
-  DNF: 'dnf', // Did Not Finish: kalkanı yokken düştü, yarışı bitiremedi
+  DNF: 'dnf', // Did Not Finish: yarıştan çıktı, süre doldu ya da bağlantı koptu (düşmek DNF değil)
 }
 
 // İzin verilen geçişler: buradaki listede olmayan bir geçiş denenirse yok sayılır

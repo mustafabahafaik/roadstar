@@ -15,6 +15,7 @@ import {
   MIN_PLAYERS,
   COUNTDOWN_MS,
   TICK_RATE,
+  RACE_TIMEOUT_MS, // 5 dakikada bitiremeyen DNF sayılır
   MAX_TRACK_SPEED,
   PLAYER_COLORS,
   rankPlayers,
@@ -34,7 +35,6 @@ try {
 const PORT = Number(process.env.PORT) || 3001
 // Hangi sitelerden bağlanılabilir (CORS). İnternete yüklerken oyunun adresini yaz: CLIENT_ORIGIN=https://...
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN?.split(',').map((o) => o.trim().replace(/\/$/, '')) ?? '*' // sondaki / ve boşluklar: panelde sık yapılan hata
-const RACE_TIMEOUT_MS = 5 * 60 * 1000 // 5 dakikada bitiremeyen DNF sayılır
 const CREATE_LOCK_MS = 60 * 1000 // zincir odasını kuran oyuncuya ayrılan süre
 const FULL_ROOM_GRACE_MS = 15 * 1000 // ücretli oda zincirde dolunca, hazır olmayan varsa en geç bu sürede başla
 const POOL_JOIN_WINDOW_S = 10 * 60 // RacePool.JOIN_WINDOW ile aynı: bu sürede dolmayan zincir odasına giriş kapanır
@@ -500,6 +500,8 @@ io.on('connection', (socket) => {
     maybeEnd(room)
   })
 
+  // Oyuncu "Yarıştan çık" dedi. Düşmek DNF DEĞİL: istemci düşünce bunu göndermez, pistin gerisinde yeniden
+  // doğar ve yarışmaya devam eder (sıralamada ilerlemesiyle yer alır)
   socket.on('dnf', () => {
     if (!room || player.status !== 'racing') return
     player.status = 'dnf'

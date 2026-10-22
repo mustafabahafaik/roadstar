@@ -273,8 +273,8 @@ export function createCar(scene, smoke, events = {}) {
     thrusters.update(dt, thrustPower, velocity, side)
   }
 
-  // Verilen mesafe kadar geride, yolun ortasında yeniden başlat
-  function respawn(backDistance) {
+  // Verilen mesafe kadar geride, yolun ortasında yeniden başlat. keepSpeed: hızını koru (kalkan kurtardı)
+  function respawn(backDistance, { keepSpeed = false } = {}) {
     let u = state.u - backDistance / trackLength
     // Doğma noktası bir engelin dibine denk gelmesin: yakın engel varsa onun da gerisine al
     for (let tries = 0; tries < course.obstacles.length; tries++) {
@@ -288,7 +288,7 @@ export function createCar(scene, smoke, events = {}) {
     state.offset = 0
     state.height = 0
     state.vy = 0
-    state.speed = RESPAWN_SPEED
+    state.speed = keepSpeed ? Math.max(RESPAWN_SPEED, state.speed) : RESPAWN_SPEED
     state.falling = false
     state.onGround = true
     state.fallTime = 0
@@ -303,7 +303,7 @@ export function createCar(scene, smoke, events = {}) {
     state.wobble = 0
   }
 
-  // Yarışı bitir. reason: 'lap' (bitiş kapısından geçti) | 'dnf' (kalkansız düştü)
+  // Yarışı bitir. reason: 'lap' (bitiş kapısından geçti) | 'quit' (yarıştan çıktı) | 'timeout' | 'disconnect'
   function endRace(reason) {
     if (state.finished) return
     state.finished = true
@@ -329,6 +329,7 @@ export function createCar(scene, smoke, events = {}) {
     speedRatio,
     progress,
     endRace,
-    respawnAfterFall: () => respawn(FALL_RESPAWN_BACK), // fall.js çağırır
+    // fall.js çağırır. Kalkan kurtardıysa düştüğü yerde, hızını koruyarak; yoksa 40 birim geride, yavaş
+    respawnAfterFall: ({ saved = false } = {}) => (saved ? respawn(0, { keepSpeed: true }) : respawn(FALL_RESPAWN_BACK)),
   }
 }

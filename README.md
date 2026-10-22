@@ -24,6 +24,7 @@
   - Toplanan tokenlar ERC-1155 olarak mint ediliyor, skill kullanılınca yakılıyor.
   - Bitiş zincire yazılıyor.
   - Fiziksel olarak imkânsız hızlar (çok erken toplama, çok erken bitiş) kontratta reddediliyor.
+- **Düşmek elemez:** Pistten düşen oyuncu biraz geride yeniden doğar; cezası ~3 sn zaman kaybı. Kalkanı varsa kalkan gider, araba düştüğü yerde hızını koruyarak geri gelir. DNF sadece bağlantı kopması, 5 dk'yı aşmak ya da "Yarıştan çık" (✕ / iki kez Esc) ile olur.
 - **Ücretli oda:** Giriş ücreti kontratta kilitli kalıyor. Yarış bitince sunucu sıralamayı imzalıyor; 1. %80, 2. %15, %5 hazine. Herkes ödülünü kendisi çekiyor (pull). Oda dolmazsa iade var.
 - **Garaj:** Boya, jant, kanat, alt neon ve itici alevi parçaları ERC-1155. **Sadece görsel**: hız ve çarpışma kutusu değişmiyor. Rakipler arabanı senin parçalarınla görüyor.
 - **İki harita:** Neon Okyanus ve Satürn Yörüngesi. Satürn'de %60 yerçekimi, asteroitler, kayan yıldızlar ve meteorlar var.
@@ -163,6 +164,7 @@ cd contracts && forge test
 | Boost | Shift | BOOST |
 | Takla (havada) | W S Q E | ↻ ↺ ⟲ ⟳ |
 | Kalkan / mıknatıs / rush | 1 2 3 | HUD'daki kutucuğa dokun |
+| Yarıştan çık | Esc iki kez | ✕ iki kez |
 
 Hata ayıklama: **F3** kamera ve araba durumu panelini açar (telefonda adrese `?debug` ekle). Serbest kamera (**C**) sadece `?debug` adresinde çalışır.
 

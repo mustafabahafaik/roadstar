@@ -5,6 +5,8 @@ export const RACE_LENGTH = 3000 // pist uzunluğu (birim). track.js buradan alı
 export const MAX_PLAYERS = 5 // bir odada en fazla
 export const MIN_PLAYERS = 2 // "herkes hazır" ile başlamak için en az (tek kişi: lobide "Tek başına")
 export const COUNTDOWN_MS = 3000 // sunucu "şu kadar ms sonra başla" der
+// DNF (bitiremedi) sadece: bağlantı kopması, bu süre içinde bitirememek ya da "Yarıştan çık". Düşmek DNF değil
+export const RACE_TIMEOUT_MS = 5 * 60 * 1000
 
 // Saniyede kaç kez durum gönderilir. 60 yerine 20: ağ trafiği 3 kat az, aradaki kareleri alıcı
 // interpolasyonla (ara değerleme) kendisi doldurur. Sunucu her durumu beklemeden odadakilere iletir
