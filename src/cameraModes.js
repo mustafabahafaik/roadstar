@@ -16,6 +16,10 @@ const MODE_BLEND_SPEED = 3 // mod geçişinin hızı (büyüdükçe daha çabuk)
 const SHOWCASE_SPEED = 0.22 // vitrin: dönüş hızı (rad/sn) → bir tur ~29 sn
 const SHOWCASE_RADIUS = 14 // bitiş kapısının sütunları ~10.7 birimde: içinden geçmesin
 const SHOWCASE_HEIGHT = 3.2
+// Emniyet kemeri: yarışta takip kamerası arabadan bu kadar uzakta bu kadar uzun kalırsa bir şey bozulmuştur.
+// Normalde en fazla ~50 birim (en uzak zoom 34 + boost 5 + 140 hızda takip gecikmesi ~14)
+const RESCUE_DISTANCE = 60
+const RESCUE_AFTER = 1 // saniye
 
 // Garaj odakları (arabanın kendi ekseninde: +z burun, +x sol). target: bakılan nokta, yaw: kameranın açısı
 const GARAGE_FOCUS = [
@@ -27,7 +31,8 @@ const GARAGE_FOCUS = [
 ]
 
 // isOrbitEnabled: serbest kamera (C tuşu) açıksa fare olaylarını OrbitControls'e bırak
-export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabled }) {
+// isRacing: yarış ekranında mıyız (emniyet kemeri sadece yarışta çalışır)
+export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabled, isRacing = () => false }) {
   // Fareyle sürükleyince arabanın etrafında dönme, bırakınca yavaşça arkaya geri gelme
   const look = { yaw: 0, height: 0, distance: 16, dragging: false }
   let mode = 'chase'
@@ -49,6 +54,8 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   const fallPosition = new THREE.Vector3()
   const desiredPosition = new THREE.Vector3()
   const lookTarget = new THREE.Vector3()
+  let farTime = 0 // kamera ne zamandır arabadan çok uzakta (emniyet kemeri)
+  const stats = { distance: 0, respawns: 0, rescues: 0 } // F3 paneli (debugPanel.js) okur
 
   domElement.addEventListener('pointerdown', (e) => {
     if (isOrbitEnabled() || e.button !== 0) return
@@ -57,14 +64,22 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   })
   domElement.addEventListener('pointermove', (e) => {
     if (!look.dragging) return
+    // movementX: son olaydan beri farenin yatay hareketi (piksel). Bazı telefon tarayıcıları dokunmada
+    // vermiyor (undefined): undefined × sayı = NaN → kamera bozulurdu. || 0 → hareket yok say
+    const dx = e.movementX || 0
+    const dy = e.movementY || 0
     if (mode === 'garage') {
-      garage.yaw -= e.movementX * 0.008 // garajda çevirme kalıcı (bırakınca geri dönmez)
+      garage.yaw -= dx * 0.008 // garajda çevirme kalıcı (bırakınca geri dönmez)
       return
     }
-    look.yaw -= e.movementX * 0.006 // movementX: son olaydan beri farenin yatay hareketi (piksel)
-    look.height = THREE.MathUtils.clamp(look.height + e.movementY * 0.03, -3.5, 10)
+    look.yaw -= dx * 0.006
+    look.height = THREE.MathUtils.clamp(look.height + dy * 0.03, -3.5, 10)
   })
-  domElement.addEventListener('pointerup', () => (look.dragging = false))
+  // pointercancel: gelen arama / bildirim parmağı iptal eder, pointerup hiç gelmez → sürükleme takılı kalmasın
+  const endDrag = () => (look.dragging = false)
+  domElement.addEventListener('pointerup', endDrag)
+  domElement.addEventListener('pointercancel', endDrag)
+  domElement.addEventListener('lostpointercapture', endDrag)
   domElement.addEventListener(
     'wheel',
     (e) => {
@@ -88,6 +103,33 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
     }
     mode = next
     if (next === 'fall') fallSide = side
+  }
+
+  // Yarış başlarken (geri sayım): mod ne olursa olsun takip, kamera doğrudan arabanın arkasında
+  function resetForRace() {
+    mode = 'chase'
+    snapBehind()
+  }
+
+  // Kamerayı takip noktasına ışınla: sürükleme ve mod geçişi sıfırlanır (bozuk look.yaw da temizlenir)
+  function snapBehind() {
+    look.yaw = 0
+    look.height = 0
+    look.dragging = false
+    blend = 0
+    farTime = 0
+    computeChase()
+    camera.position.copy(chasePosition)
+    lookTarget.copy(chaseLook)
+  }
+
+  // Takip modu hedefi (arabanın kendi ekseninde; car.frame takla içermez)
+  function computeChase() {
+    const distance = look.distance + 5 * boost.intensity // boost: biraz geri çekil
+    chasePosition.set(Math.sin(look.yaw) * distance, CAMERA_HEIGHT + look.height, -Math.cos(look.yaw) * distance)
+    chaseLook.set(0, 1.6, 12 * Math.cos(look.yaw)) // arkadan bakarken önüne, yandan bakarken kendisine
+    car.frame.localToWorld(chasePosition)
+    car.frame.localToWorld(chaseLook)
   }
 
   // Garaj: hangi slota odaklanılsın (0 boya … 4 itici alevi). Kullanıcının çevirmesi sıfırlanır
@@ -176,12 +218,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
     }
     blend += ((mode === 'fall' ? 1 : 0) - blend) * (1 - Math.exp(-MODE_BLEND_SPEED * dt))
 
-    // --- Takip modu hedefi (arabanın kendi ekseninde; car.frame takla içermez) ---
-    const distance = look.distance + 5 * boost.intensity // boost: biraz geri çekil
-    chasePosition.set(Math.sin(look.yaw) * distance, CAMERA_HEIGHT + look.height, -Math.cos(look.yaw) * distance)
-    chaseLook.set(0, 1.6, 12 * Math.cos(look.yaw)) // arkadan bakarken önüne, yandan bakarken kendisine
-    car.frame.localToWorld(chasePosition)
-    car.frame.localToWorld(chaseLook)
+    computeChase()
 
     // --- Düşüş modu hedefi: yanda + yukarıda, arabaya bak. Yerel +x arabanın SOLU (lookAt kuralı) ---
     fallPosition.set(-fallSide * FALL_SIDE_DISTANCE, FALL_SIDE_HEIGHT, FALL_SIDE_AHEAD)
@@ -203,6 +240,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
         blend = mode === 'fall' ? blend : 0
         camera.position.copy(mode === 'fall' ? desiredPosition : chasePosition)
         car.state.respawned = false
+        stats.respawns++
       }
       camera.position.lerp(desiredPosition, 1 - Math.exp(-10 * dt)) // yumuşak takip
       // Boost başlangıcında kısa sarsıntı: bakılan noktayı titret (kamera konumu bozulmaz)
@@ -211,6 +249,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
         lookTarget.y += (Math.random() - 0.5) * 1.2 * boost.shake
       }
     }
+    guard(dt)
     camera.lookAt(lookTarget)
 
     // Hız hissi: FOV hızla 62 → 72, boost'ta 90'a kadar; düşüşte biraz daralır (yakın çekim)
@@ -219,13 +258,36 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
     camera.updateProjectionMatrix()
   }
 
+  // Emniyet kemeri: kamera konumu NaN olduysa (bir kez bulaşınca her karede yayılır) ya da yarışta takip
+  // modundayken 1 sn'den uzun süre arabadan çok uzak kaldıysa → arabanın arkasına ışınla, konsola yaz
+  function guard(dt) {
+    if (!Number.isFinite(car.model.position.lengthSq())) return // araba bozuksa kamera düzeltemez: her kare uyarı yağmasın
+    stats.distance = camera.position.distanceTo(car.model.position)
+    const broken = !Number.isFinite(stats.distance)
+    const far = isRacing() && mode === 'chase' && stats.distance > RESCUE_DISTANCE
+    farTime = far ? farTime + dt : 0
+    if (!broken && farTime <= RESCUE_AFTER) return
+    const before = stats.distance
+    snapBehind()
+    stats.rescues++
+    console.warn(
+      `[kamera] ${broken ? 'konum NaN' : `${Math.round(before)} birim uzakta kaldı`} → arabanın arkasına ışınlandı`,
+      { mode, crashed: car.state.crashed, falling: car.state.falling, onGround: car.state.onGround },
+    )
+  }
+
   return {
     update,
     setMode,
+    resetForRace,
     focusSlot,
     shake,
     get mode() {
       return mode
     },
+    get blend() {
+      return blend
+    },
+    stats,
   }
 }

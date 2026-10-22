@@ -2,6 +2,8 @@
 
 **Monad üzerinde gerçek zamanlı roket yarışı.** Gökyüzünde kıvrılan neon bir pistte, roketli arabalarla 5 kişiye kadar yarış. Yoldaki her token, her skill ve her bitiş Monad testnet'te bir işlem.
 
+**Canlı demo:** [roadstar-six.vercel.app](https://roadstar-six.vercel.app). Sunucu ücretsiz planda; bir süre kimse girmediyse ilk bağlantı ~1 dk sürebilir.
+
 > **English summary.** ROADSTAR is a real-time multiplayer rocket-car racer built with Three.js, a Node/Socket.IO game server and Solidity contracts on Monad testnet. Every pickup, skill and finish is an on-chain transaction, about 45 per player per race. The game measures confirmation time live on the results screen. Players can stake an entry fee into an escrow contract that pays out from a server-signed ranking (pull payments). Cosmetic car parts are ERC-1155 NFTs.
 
 <!-- Ekran görüntüleri: docs/screenshots/ klasörüne koy, sonra aşağıdaki satırların başındaki yorum işaretlerini kaldır -->
@@ -161,6 +163,8 @@ cd contracts && forge test
 | Boost | Shift | BOOST |
 | Takla (havada) | W S Q E | ↻ ↺ ⟲ ⟳ |
 | Kalkan / mıknatıs / rush | 1 2 3 | HUD'daki kutucuğa dokun |
+
+Hata ayıklama: **F3** kamera ve araba durumu panelini açar (telefonda adrese `?debug` ekle). Serbest kamera (**C**) sadece `?debug` adresinde çalışır.
 
 ## Güvenlik notları
 

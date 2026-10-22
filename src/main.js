@@ -2,13 +2,13 @@ import './style.css'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { createPostFX } from './postfx.js'
-import { quality } from './settings.js'
+import { quality, DEBUG } from './settings.js'
 import { createTrack } from './track.js'
 import { createCar } from './car.js'
 import { createSmoke } from './smoke.js'
 import { createTricks } from './tricks.js'
 import { createBoost } from './boost.js'
-import { createGameState } from './gameState.js'
+import { createGameState, GAME_STATE } from './gameState.js'
 import { createCameraModes } from './cameraModes.js'
 import { createFall } from './fall.js'
 import { createItems, TOKEN_TYPES } from './items.js'
@@ -26,6 +26,7 @@ import { DEFAULT_MAP } from './maps.js'
 import { createMeteors } from './meteors.js'
 import { createAudio, createSoundToggle } from './audio.js'
 import { createTouchControls } from './touch.js'
+import { createDebugPanel } from './debugPanel.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -197,9 +198,10 @@ controls.maxDistance = 1000 // büyük pistin tamamı görünebilsin
 controls.enableDamping = true // bırakınca yumuşakça yavaşlasın
 controls.enabled = false // başlangıçta takip kamerası aktif
 
-// C tuşu: takip kamerası ↔ serbest kamera
+// C tuşu: takip kamerası ↔ serbest kamera. SADECE ?debug ile: yarışta D'nin hemen altındaki C'ye yanlışlıkla
+// basınca takip kamerası duruyor, kamera olduğu yerde donuyor ve araba kadrajdan çıkıp gidiyordu
 window.addEventListener('keydown', (e) => {
-  if (e.code !== 'KeyC' || isTyping(e)) return
+  if (e.code !== 'KeyC' || isTyping(e) || !DEBUG) return
   controls.enabled = !controls.enabled
   if (controls.enabled) {
     controls.target.copy(car.model.position)
@@ -214,7 +216,18 @@ const cameraModes = createCameraModes({
   car,
   boost,
   isOrbitEnabled: () => controls.enabled,
+  isRacing: () => router.current === 'race', // emniyet kemeri sadece yarış ekranında
 })
+
+// Geri sayım başlarken: serbest kamera kapalı, mod ne olursa olsun takip, kamera arabanın arkasında
+gameState.onChange((next) => {
+  if (next !== GAME_STATE.COUNTDOWN) return
+  controls.enabled = false
+  cameraModes.resetForRace()
+})
+
+// F3: kamera ve araba durumu paneli (debugPanel.js). Telefonda adrese ?debug ekle
+const debugPanel = createDebugPanel({ car, camera, cameraModes, gameState, router, isOrbitEnabled: () => controls.enabled })
 
 // Kayan yıldızlar ve meteorlar (meteors.js, SADECE GÖRSEL): sadece haritanın "meteors" ayarı varsa (Satürn)
 const meteors = createMeteors({
@@ -307,6 +320,7 @@ function simulate(realDelta) {
 
   if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı
   else cameraModes.update(realDelta) // kamera gerçek zamanla: ağır çekimde de akıcı
+  debugPanel.update(realDelta)
 
   // Sesler: motor (hız + boost), itici (roket gücü), ağır çekim, dinleyici = kamera, rakip motorları
   audio.update({

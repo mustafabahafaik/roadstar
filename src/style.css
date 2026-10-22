@@ -1125,3 +1125,21 @@ body.touch[data-screen='race'] .boost-hud { bottom: calc(max(12px, env(safe-area
 @media (max-width: 640px) {
   .lobby-qr img { width: 112px; height: 112px; }
 }
+
+/* F3 hata ayıklama paneli (debugPanel.js): sol ortada, tıklamaları engellemez */
+.debug-panel {
+  position: fixed;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 60;
+  margin: 0;
+  padding: 10px 12px;
+  background: rgb(5 3 15 / 85%);
+  border: 1px solid rgb(41 231 255 / 35%);
+  border-radius: 8px;
+  color: #c9f6ff;
+  font: 12px/1.45 ui-monospace, Consolas, monospace;
+  white-space: pre;
+  pointer-events: none;
+}
