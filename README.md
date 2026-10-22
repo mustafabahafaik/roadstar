@@ -88,7 +88,7 @@ flowchart LR
 | Race | [`0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434`](https://testnet.monadexplorer.com/address/0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434) |
 | RaceItems (Race'in oluşturduğu) | [`0x01642877db2b43AE2395ABf2425DE304675cD672`](https://testnet.monadexplorer.com/address/0x01642877db2b43AE2395ABf2425DE304675cD672) |
 | RacePool | _deploy edilince eklenecek_ |
-| GarageParts | _deploy edilince eklenecek_ |
+| GarageParts | [`0x8fcbf1ae2a4183a612be64fdb1f9afff2dc1893b`](https://testnet.monadexplorer.com/address/0x8fcbf1ae2a4183a612be64fdb1f9afff2dc1893b) |
 
 ## Çalıştırma
 
