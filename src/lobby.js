@@ -1,4 +1,5 @@
 import { formatEther, getAddress } from 'ethers'
+import QRCode from 'qrcode'
 import { RACE_LENGTH } from './track.js'
 import { MIN_PLAYERS, MAX_PLAYERS, ownershipMessage } from '../shared/protocol.js'
 import { SERVER_URL } from './net.js'
@@ -60,6 +61,11 @@ export function createLobby({ net, chain, getLoadout, getMapId, onSolo, onBack }
       <button class="race-start lobby-ready">HAZIRIM</button>
       <p class="race-sub lobby-hint"></p>
       <p class="lobby-bots" hidden></p>
+      <div class="lobby-qr" hidden>
+        <img alt="Bu odaya katılmak için QR kod" width="148" height="148">
+        <p>Telefonla okut, <b>aynı odaya</b> gir</p>
+        <small class="lobby-qr-warn" hidden>Bu sayfa "localhost"tan açık: telefon buna ulaşamaz. <code>npm run demo</code>'nun yazdığı ağ adresiyle aç.</small>
+      </div>
     </div>
 
     <p class="lobby-status">Sunucuya bağlanılıyor…</p>
@@ -189,10 +195,30 @@ export function createLobby({ net, chain, getLoadout, getMapId, onSolo, onBack }
     botsLine.textContent = left > 0 ? `Boş koltuklar ${left} sn sonra botlarla dolacak` : 'Botlar geliyor…'
   }, 250)
 
+  // QR kod: bu odanın lobi adresi (?room=…#/lobi). Okutan telefon aynı odaya, oda adı hazır yazılı gelir
+  let qrRoom = null
+  function renderQr(roomId) {
+    if (roomId === qrRoom) return
+    qrRoom = roomId
+    const url = new URL(window.location.href)
+    url.search = `?room=${encodeURIComponent(roomId)}`
+    url.hash = '#/lobi'
+    const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    QRCode.toDataURL(url.toString(), { margin: 1, width: 296, color: { dark: '#0b0618', light: '#e6eaff' } })
+      .then((dataUrl) => {
+        $('.lobby-qr img').src = dataUrl
+        $('.lobby-qr img').title = url.toString()
+        $('.lobby-qr-warn').hidden = !local
+        $('.lobby-qr').hidden = false
+      })
+      .catch(() => ($('.lobby-qr').hidden = true)) // QR üretilemezse sessizce gizle: lobi yine çalışır
+  }
+
   // Oda listesi (sunucunun her 'room' olayında). İsimler başkalarından gelir → escapeHtml şart
   function render(room) {
     if (!room) return
     lastRoom = room
+    renderQr(room.id)
     const me = room.players.find((p) => p.id === net.id)
     const paid = room.chain // ücretli oda mı (zincir odası bağlandı mı)
     const capacity = paid ? room.chain.maxPlayers : MAX_PLAYERS

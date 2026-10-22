@@ -25,6 +25,7 @@ import { createWorld } from './world.js'
 import { DEFAULT_MAP } from './maps.js'
 import { createMeteors } from './meteors.js'
 import { createAudio, createSoundToggle } from './audio.js'
+import { createTouchControls } from './touch.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -236,6 +237,9 @@ const fall = createFall({
   onMessage: (text) => showMessage(text),
 })
 
+// Dokunmatik kontroller (touch.js): telefon / tablette ekranın altında yön, itici, boost, takla düğmeleri
+const touch = createTouchControls({ car, router })
+
 // Giriş sayfası (landing.js) ve garaj (garage.js): arkada araba vitrin kamerasında döner
 landing = createLanding({ router, chain, cameraModes, world })
 createGarage({ router, cameraModes, chain, car, boost, getEquipped: () => loadout, setEquipped: setLoadout })
@@ -288,6 +292,7 @@ function simulate(realDelta) {
   // Zaman ölçeği TEK NOKTADAN: oyundaki her hareket bu delta'yı kullanır → ağır çekimde dünya
   // aynı oranda yavaşlar, hiçbir sistemin "ağır çekim var mı?" diye bilmesi gerekmez
   const delta = realDelta * fall.timeScale
+  touch.update() // dokunmatik: otomatik gaz + havadayken takla düğmeleri (car.update'ten ÖNCE: bu karenin girdisi)
 
   world.update(delta) // dalgalar, bulutlar ya da dönen Satürn ve süzülen asteroitler
   meteors.update(delta) // oyun zamanı: düşüşteki ağır çekimde meteorlar da yavaşlar

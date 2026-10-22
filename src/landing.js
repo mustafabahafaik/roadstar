@@ -54,7 +54,6 @@ export function createLanding({ router, chain, cameraModes, world }) {
         <button class="landing-button landing-play">YARIŞA GİR</button>
         <button class="landing-button landing-garage">GARAJ</button>
       </div>
-      <p class="landing-touch" hidden>Yarış klavyeyle oynanır: lobiyi telefondan izleyebilir, bilgisayardan katılabilirsin.</p>
     </div>
 
     <section class="landing-maps">
@@ -82,11 +81,6 @@ export function createLanding({ router, chain, cameraModes, world }) {
   const $ = (sel) => el.querySelector(sel)
   $('.landing-play').addEventListener('click', () => router.go('lobby'))
   $('.landing-garage').addEventListener('click', () => router.go('garage'))
-  // Dokunmatik ekran (telefon / tablet): klavye yok → nasıl katılacağını söyle (ekran türü değişirse güncellenir)
-  const touch = window.matchMedia('(pointer: coarse)')
-  const updateTouchNote = () => ($('.landing-touch').hidden = !touch.matches)
-  touch.addEventListener('change', updateTouchNote)
-  updateTouchNote()
 
   // Harita kartları: seçili olan vurgulanır, seçim hatırlanır (şimdilik sadece Neon Okyanus açık)
   const cards = [...el.querySelectorAll('.landing-map')]

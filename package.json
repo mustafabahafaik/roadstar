@@ -1,5 +1,5 @@
 {
-  "name": "monad-racer",
+  "name": "roadstar",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,14 +7,20 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "server": "node server/index.js"
+    "server": "node server/index.js",
+    "demo": "node scripts/demo.js",
+    "demo:offline": "node scripts/demo.js --offline"
   },
   "devDependencies": {
     "vite": "^8.3.0"
   },
   "dependencies": {
     "ethers": "^6.17.0",
+    "qrcode": "^1.5.4",
     "socket.io-client": "^4.8.4",
     "three": "^0.186.1"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

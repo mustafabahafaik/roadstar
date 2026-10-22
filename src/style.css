@@ -773,7 +773,6 @@ body[data-screen='garage'] .tx-list {
   background: linear-gradient(90deg, #ff3bd6, #9b6bff);
   box-shadow: 0 0 28px rgba(255, 59, 214, 0.55);
 }
-.landing-touch { max-width: 420px; margin: 14px auto 0; font-size: 13px; color: #ffd23f; }
 
 .landing-maps { justify-self: center; width: min(560px, 100%); }
 .landing-maps h2 { margin: 0 0 8px; font-size: 12px; letter-spacing: 3px; opacity: 0.75; text-align: center; }
@@ -1018,4 +1017,111 @@ canvas { touch-action: none; }
 @media (max-width: 640px) {
   .sound-toggle { top: max(10px, env(safe-area-inset-top)); right: 10px; }
   .tx-panel { right: 58px; }
+}
+
+/* =====================================================================
+   Dokunmatik kontroller (touch.js): sadece dokunmatik ekranda (body.touch) ve yarışta
+   ===================================================================== */
+.touch-controls { display: none; }
+body.touch[data-screen='race'] .touch-controls {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 0 max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  pointer-events: none; /* düğmelerin arası dokunuşu engellemesin */
+}
+.touch-zone { pointer-events: auto; }
+.touch-left { display: flex; gap: 10px; }
+/* Sağ: İTİCİ köşede, BOOST üstünde, FREN solunda (375 px telefona sığsın) */
+.touch-right {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas: '. boost' 'brake jump';
+  gap: 8px;
+  align-items: end;
+  justify-items: center;
+}
+.touch-right .touch-small { grid-area: brake; }
+.touch-right .touch-mid { grid-area: boost; }
+.touch-right .touch-big { grid-area: jump; font-size: 15px; }
+/* Takla: sadece havadayken, boost çubuğunun üstünde tek sıra (alt kümelerin arasında yer yok: 375 px telefon) */
+.touch-air {
+  position: absolute;
+  left: 50%;
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 212px);
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(4, 48px);
+  gap: 10px;
+  visibility: hidden;
+}
+.touch-controls.airborne .touch-air { visibility: visible; }
+.touch-button {
+  touch-action: none; /* tarayıcı kaydırma / yakınlaştırma yapmasın */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  display: grid;
+  place-content: center;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: rgba(8, 10, 22, 0.5);
+  backdrop-filter: blur(4px);
+  color: #fff;
+  font: 800 11px/1.05 system-ui, sans-serif;
+  letter-spacing: 1px;
+}
+.touch-big { width: 78px; height: 78px; font-size: 26px; }
+.touch-mid { width: 62px; height: 62px; font-size: 11px; border-color: #9b6bff; }
+.touch-air .touch-button { width: 48px; height: 48px; font-size: 22px; border-color: #29e7ff; }
+.touch-button small { display: block; margin-top: 2px; font-size: 7px; font-weight: 500; letter-spacing: 0; opacity: 0.75; }
+.touch-button.on { background: rgba(155, 107, 255, 0.65); border-color: #c7b0ff; }
+
+/* Dokunmatik yarış: skill kutucukları dokunulabilir, boost çubuğu düğmelerin üstünde */
+body.touch .hud-panel { pointer-events: auto; }
+body.touch .hud-slot { cursor: pointer; }
+body.touch[data-screen='race'] .boost-hud { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 160px); } /* sağdaki düğme kümesinin (~148 px) üstü */
+
+/* Telefon yarış HUD'u: üstte dar zincir paneli, altında ilerleme; solda sıralama, sağda skill'ler */
+@media (max-width: 640px) {
+  body[data-screen='race'] .tx-list,
+  body[data-screen='race'] .tx-note { display: none; }
+  body[data-screen='race'] .race-progress { top: calc(max(10px, env(safe-area-inset-top)) + 66px); } /* zincir panelinin (~61 px) altı */
+  body[data-screen='race'] .race-standings { top: calc(max(10px, env(safe-area-inset-top)) + 92px); left: 10px; width: 138px; padding: 6px 8px; font-size: 11px; }
+  body[data-screen='race'] .hud-panel {
+    top: calc(max(10px, env(safe-area-inset-top)) + 92px);
+    right: 10px;
+    bottom: auto;
+    left: auto;
+    width: 150px;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+  body[data-screen='race'] .hud-stats { display: none; }
+  .hud-message { font-size: 34px; letter-spacing: 3px; }
+}
+/* Yatay telefon: düğmeler biraz küçük */
+@media (max-height: 480px) and (pointer: coarse) {
+  .touch-big { width: 64px; height: 64px; }
+  .touch-mid { width: 54px; height: 54px; }
+  .touch-button { width: 48px; height: 48px; }
+}
+
+/* --- Lobide QR kod (lobby.js) --- */
+.lobby-qr { display: grid; justify-items: center; gap: 4px; margin-top: 12px; }
+.lobby-qr img { width: 148px; height: 148px; border-radius: 10px; image-rendering: pixelated; }
+.lobby-qr p { margin: 0; font-size: 13px; }
+.lobby-qr-warn { max-width: 280px; color: #ffd23f; font-size: 11px; }
+.lobby-qr-warn code { color: #fff; }
+@media (max-width: 640px) {
+  .lobby-qr img { width: 112px; height: 112px; }
 }

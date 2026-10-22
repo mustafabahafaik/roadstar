@@ -33,7 +33,7 @@ try {
 
 const PORT = Number(process.env.PORT) || 3001
 // Hangi sitelerden bağlanılabilir (CORS). İnternete yüklerken oyunun adresini yaz: CLIENT_ORIGIN=https://...
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN?.split(',') ?? '*'
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN?.split(',').map((o) => o.trim().replace(/\/$/, '')) ?? '*' // sondaki / ve boşluklar: panelde sık yapılan hata
 const RACE_TIMEOUT_MS = 5 * 60 * 1000 // 5 dakikada bitiremeyen DNF sayılır
 const CREATE_LOCK_MS = 60 * 1000 // zincir odasını kuran oyuncuya ayrılan süre
 const FULL_ROOM_GRACE_MS = 15 * 1000 // ücretli oda zincirde dolunca, hazır olmayan varsa en geç bu sürede başla
@@ -80,7 +80,7 @@ else console.log('BOT_KEYS yok: boş koltuklar botla dolmaz (node scripts/make-b
 
 const httpServer = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
-  res.end('Monad Racer sunucusu çalışıyor\n') // tarayıcıdan açınca "çalışıyor mu?" kontrolü
+  res.end('ROADSTAR sunucusu çalışıyor\n') // tarayıcıdan açınca "çalışıyor mu?" kontrolü
 })
 const io = new Server(httpServer, { cors: { origin: CLIENT_ORIGIN } })
 
@@ -549,4 +549,4 @@ setInterval(() => {
   }
 }, 1000 / TICK_RATE)
 
-httpServer.listen(PORT, () => console.log(`Monad Racer sunucusu: http://localhost:${PORT}`))
+httpServer.listen(PORT, () => console.log(`ROADSTAR sunucusu: http://localhost:${PORT}`))

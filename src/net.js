@@ -1,8 +1,10 @@
 import { io } from 'socket.io-client'
 
-// Sunucu adresi TEK yerden: kök klasördeki .env → VITE_SERVER_URL=http://localhost:3001
-// (Vite sadece VITE_ ile başlayan değişkenleri oyuna verir). İnternete yükleyince burayı değiştirmek yeter
-export const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+// Sunucu adresi TEK yerden: VITE_SERVER_URL (yerelde kök .env, internette Vercel ortam değişkeni).
+// Vite sadece VITE_ ile başlayan değişkenleri oyuna verir ve bunları DERLEME anında koda gömer.
+// Verilmezse: sayfayı sunan bilgisayarın 3001 portu. "localhost" yazsaydık telefon kendine bakardı;
+// location.hostname ile ağdaki telefon da (192.168.x.x) bilgisayardaki sunucuyu bulur (npm run demo)
+export const SERVER_URL = import.meta.env.VITE_SERVER_URL || `${window.location.protocol}//${window.location.hostname}:3001`
 
 const CLOCK_SAMPLES = 5 // saat eşitlemede kaç ping/pong
 const CLOCK_RESYNC_MS = 10000 // saatler zamanla kayar: arada bir yeniden eşitle

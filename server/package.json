@@ -1,5 +1,5 @@
 {
-  "name": "monad-racer-server",
+  "name": "roadstar-server",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,5 +10,8 @@
   "dependencies": {
     "ethers": "^6.17.0",
     "socket.io": "^4.8.4"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

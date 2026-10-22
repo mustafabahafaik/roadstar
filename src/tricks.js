@@ -140,8 +140,8 @@ export function createTricks(car, smoke, events = {}) {
     }
     if (!input.forward) heldAtTakeoff.forward = false
     if (!input.brake) heldAtTakeoff.brake = false
-    const flipForward = input.forward && !heldAtTakeoff.forward
-    const flipBack = input.brake && !heldAtTakeoff.brake
+    const flipForward = (input.forward && !heldAtTakeoff.forward) || input.trickForward // dokunmatik takla düğmesi
+    const flipBack = (input.brake && !heldAtTakeoff.brake) || input.trickBack
 
     if (airborne && canControl) {
       // W öne takla (+), S geriye (−) — havada YENİDEN basılınca; E sağa yuvarlan (+), Q sola (−)

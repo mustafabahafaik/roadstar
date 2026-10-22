@@ -12,8 +12,12 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => pressed.delete(e.code))
 window.addEventListener('blur', () => pressed.clear()) // pencere değişince tuşlar takılı kalmasın
 
+// Dokunmatik (touch.js): telefonda parmak yön düğmelerinde olduğu için yarışta gaz kendiliğinden basılı
+let autoForward = false
+export const setAutoForward = (on) => (autoForward = on)
+
 export const input = {
-  get forward() { return pressed.has('KeyW') || pressed.has('ArrowUp') },
+  get forward() { return autoForward || pressed.has('KeyW') || pressed.has('ArrowUp') },
   get brake() { return pressed.has('KeyS') || pressed.has('ArrowDown') },
   get left() { return pressed.has('KeyA') || pressed.has('ArrowLeft') },
   get right() { return pressed.has('KeyD') || pressed.has('ArrowRight') },
@@ -21,4 +25,8 @@ export const input = {
   // Havada takla (tricks.js): Q / E kendi uzun ekseni etrafında yuvarlanma (barrel roll)
   get rollLeft() { return pressed.has('KeyQ') },
   get rollRight() { return pressed.has('KeyE') },
+  // Dokunmatik takla düğmeleri: W gaz olarak sürekli basılı olduğu için havada "yeniden basma" olmuyor →
+  // takla için ayrı (sahte) tuş kodları
+  get trickForward() { return pressed.has('TouchTrickForward') },
+  get trickBack() { return pressed.has('TouchTrickBack') },
 }

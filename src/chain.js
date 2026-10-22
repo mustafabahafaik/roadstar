@@ -10,7 +10,7 @@ export const MONAD_TESTNET = {
   faucet: 'https://faucet.monad.xyz',
 }
 // contracts/ içinde deploy edince çıkan Race adresi. Boşken oyun zincirsiz çalışır
-export const RACE_ADDRESS = '0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434'
+export const RACE_ADDRESS = import.meta.env.VITE_RACE_ADDRESS || '0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434'
 // RacePool (giriş ücreti havuzu) adresi. Boşken ücretli oda kapalı. server/.env'deki POOL_ADDRESS ile AYNI olmalı
 export const POOL_ADDRESS = import.meta.env.VITE_POOL_ADDRESS || '' // deploy edince adresi '' içine yapıştır
 export const ENTRY_FEE = parseEther('1') // odayı kuranın seçtiği giriş ücreti: 1 MON (10^18 wei)
