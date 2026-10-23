@@ -5,7 +5,7 @@ import { JsonRpcProvider, Wallet, Contract, formatEther } from 'ethers'
 import { POOL_GAS_LIMITS } from '../shared/protocol.js'
 import { createBotPilot } from './botPilot.js'
 
-const NAMES = ['nova', 'zeta', 'volt', 'kuzgun', 'neon', 'turbo', 'pulsar', 'atlas']
+export const BOT_NAMES = ['nova', 'zeta', 'volt', 'kuzgun', 'neon', 'turbo', 'pulsar', 'atlas'] // scripts/budget.js de kullanır
 const FAUCET = 'https://faucet.monad.xyz'
 const REFUND_AFTER_MS = (10 * 60 + 15) * 1000 // RacePool.JOIN_WINDOW (10 dk) + blok zamanı payı
 const REFUND_RETRIES = 3
@@ -14,7 +14,7 @@ export function createBotManager({ keys, serverUrl, rpcUrl, poolAddress, lowBala
   // Sunucu botları bu gizli anahtarla tanır: insan adını "BOT·x" yapsa da bot sayılmaz
   const token = randomBytes(16).toString('hex')
   const provider = new JsonRpcProvider(rpcUrl)
-  const bots = keys.map((key, i) => ({ key, name: `BOT·${NAMES[i % NAMES.length]}`, address: new Wallet(key).address, busy: false }))
+  const bots = keys.map((key, i) => ({ key, name: `BOT·${BOT_NAMES[i % BOT_NAMES.length]}`, address: new Wallet(key).address, busy: false }))
 
   async function checkBalance(bot) {
     try {

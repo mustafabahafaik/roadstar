@@ -1,5 +1,5 @@
-import { JsonRpcProvider, Wallet, Interface, keccak256, formatEther, parseEther } from 'ethers'
-import { POOL_GAS_LIMITS } from '../shared/protocol.js'
+import { JsonRpcProvider, Wallet, Interface, keccak256, formatEther } from 'ethers'
+import { RACE_GAS_LIMITS, POOL_GAS_LIMITS, GARAGE_GAS_LIMITS, ENTRY_FEE } from '../shared/protocol.js'
 
 // --- Ağ ve kontrat ---
 export const MONAD_TESTNET = {
@@ -13,7 +13,7 @@ export const MONAD_TESTNET = {
 export const RACE_ADDRESS = import.meta.env.VITE_RACE_ADDRESS || '0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434'
 // RacePool (giriş ücreti havuzu) adresi. Boşken ücretli oda kapalı. server/.env'deki POOL_ADDRESS ile AYNI olmalı
 export const POOL_ADDRESS = import.meta.env.VITE_POOL_ADDRESS || '' // deploy edince adresi '' içine yapıştır
-export const ENTRY_FEE = parseEther('1') // odayı kuranın seçtiği giriş ücreti: 1 MON (10^18 wei)
+export { ENTRY_FEE } // odayı kuranın seçtiği giriş ücreti: 0.05 MON (shared/protocol.js; lobby.js buradan alır)
 
 // GarageParts (görsel araba parçaları, ERC1155) adresi. Boşken garaj sadece önizleme yapar
 export const GARAGE_ADDRESS = import.meta.env.VITE_GARAGE_ADDRESS || '' // deploy edince adresi '' içine yapıştır
@@ -77,18 +77,8 @@ export function parseRoomCreated(receipt) {
 }
 
 // Gaz limitleri: ölçülen değer + taban ücret (21k) + pay. Monad ücreti limit üzerinden keser → dar tut.
-// estimateGas kullanmıyoruz: hem fazladan RPC (gecikme) hem de iyimser akışta yanlış sonuç verir
-// (ör. collect henüz işlenmeden useSkill tahmini "token yok" der)
-// RacePool limitleri shared/protocol.js'te (botlar da kullanır)
-const GAS_LIMITS = {
-  startRace: 150000n,
-  collect: 140000n,
-  useSkill: 95000n,
-  finishRace: 80000n,
-  ...POOL_GAS_LIMITS,
-  buy: 100000n, // GarageParts: 55.7k (mint) + 21k + pay
-  equip: 95000n, // 53.6k + 21k + pay
-}
+// Gaz limitleri shared/protocol.js'te (botlar ve betikler de kullanır; ölçüm: scripts/gas-measure.js)
+const GAS_LIMITS = { ...RACE_GAS_LIMITS, ...POOL_GAS_LIMITS, ...GARAGE_GAS_LIMITS }
 const RECEIPT_POLL_MS = 150 // onayı kaç ms'de bir soralım (ölçüm hassasiyeti)
 const FEE_REFRESH_MS = 20000 // gas fiyatını ne sıklıkla güncelleyelim
 const BALANCE_REFRESH_MS = 8000

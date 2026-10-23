@@ -72,7 +72,9 @@ const bots = botKeys.length
       serverUrl: `http://localhost:${PORT}`,
       rpcUrl: process.env.RPC_URL || 'https://testnet-rpc.monad.xyz',
       poolAddress: pool?.address,
-      lowBalance: parseEther(process.env.BOT_LOW_BALANCE || '1.2'),
+      // Ücretli yarış başına bot en kötü ~0.09 MON harcar: 0.05 giriş + joinRoom, settle, withdraw gazı
+      // (limit × ~102 gwei). 0.3 ≈ 3 yarış: altına düşünce uyar (scripts/budget.js ile de bakılır)
+      lowBalance: parseEther(process.env.BOT_LOW_BALANCE || '0.3'),
     })
   : null
 if (bots) bots.checkBalances()

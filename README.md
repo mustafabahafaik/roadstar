@@ -25,7 +25,7 @@
   - Bitiş zincire yazılıyor.
   - Fiziksel olarak imkânsız hızlar (çok erken toplama, çok erken bitiş) kontratta reddediliyor.
 - **Düşmek elemez:** Pistten düşen oyuncu biraz geride yeniden doğar; cezası ~3 sn zaman kaybı. Kalkanı varsa kalkan gider, araba düştüğü yerde hızını koruyarak geri gelir. DNF sadece bağlantı kopması, 5 dk'yı aşmak ya da "Yarıştan çık" (✕ / iki kez Esc) ile olur.
-- **Ücretli oda:** Giriş ücreti kontratta kilitli kalıyor. Yarış bitince sunucu sıralamayı imzalıyor; 1. %80, 2. %15, %5 hazine. Herkes ödülünü kendisi çekiyor (pull). Oda dolmazsa iade var.
+- **Ücretli oda:** Giriş ücreti (0.05 MON) kontratta kilitli kalıyor. Yarış bitince sunucu sıralamayı imzalıyor; 1. %80, 2. %15, %5 hazine. Herkes ödülünü kendisi çekiyor (pull). Oda dolmazsa iade var.
 - **Garaj:** Boya, jant, kanat, alt neon ve itici alevi parçaları ERC-1155. **Sadece görsel**: hız ve çarpışma kutusu değişmiyor. Rakipler arabanı senin parçalarınla görüyor.
 - **İki harita:** Neon Okyanus ve Satürn Yörüngesi. Satürn'de %60 yerçekimi, asteroitler, kayan yıldızlar ve meteorlar var.
 - **Ses:** Web Audio ile prosedürel; hiçbir ses dosyası yok.
@@ -140,6 +140,28 @@ cd contracts && forge test
 | `.env` / Vercel | `VITE_RACE_ADDRESS`, `VITE_POOL_ADDRESS`, `VITE_GARAGE_ADDRESS` | Kontrat adresleri |
 
 Örnekler: `.env.example`, `server/.env.example`, `contracts/.env.example`.
+
+### Testnet bütçesi
+
+Monad ücreti işlemin **kullandığı** gazdan değil, işlemde yazılan gaz **limitinden** kesiyor. Limitler bu yüzden ölçülen en kötü durum + %15 (`shared/protocol.js`). Tipik bir yarış (25 token, 3 skill) oyuncuya ~0.34 MON'a mal oluyor.
+
+```bash
+node scripts/budget.js 0x<tarayıcıdaki-burner>
+```
+
+Cüzdanların bakiyesi ve "kaç yarışa / kaç izleyiciye yeter" tahmini.
+
+```bash
+node scripts/fund.js 0.7 0xA.. 0xB..
+```
+
+`FUNDER_KEY` cüzdanından (contracts/.env) her adrese 0.7 MON. 10 MON'un altındaki cüzdan için Monad'ın rezerv kuralı yüzünden gönderimler arasında 4 blok bekliyor. `--kuru` sadece planı gösteriyor.
+
+```bash
+node scripts/gas-measure.js
+```
+
+Gerçek gaz kullanımını Monad'da ölçüyor: `eth_estimateGas` + state override, zincirde hiçbir şey harcamadan. RacePool'u yerel anvil'de kurup aynı durumu Monad'a soruyor. Makbuz işe yaramıyor: Monad makbuza da limiti yazıyor.
 
 ### İnternete yükleme
 
