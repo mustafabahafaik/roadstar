@@ -91,6 +91,7 @@ flowchart LR
 | RaceItems (Race'in oluşturduğu) | [`0x01642877db2b43AE2395ABf2425DE304675cD672`](https://testnet.monadexplorer.com/address/0x01642877db2b43AE2395ABf2425DE304675cD672) |
 | RacePool | _deploy edilince eklenecek_ |
 | GarageParts | [`0x8fcbf1ae2a4183a612be64fdb1f9afff2dc1893b`](https://testnet.monadexplorer.com/address/0x8fcbf1ae2a4183a612be64fdb1f9afff2dc1893b) |
+| BetPool | _deploy edilince eklenecek_ (RacePool'dan sonra) |
 
 ## Çalıştırma
 
@@ -142,6 +143,19 @@ cd contracts && forge test
 | `.env` / Vercel | `VITE_RACE_ADDRESS`, `VITE_POOL_ADDRESS`, `VITE_GARAGE_ADDRESS` | Kontrat adresleri |
 
 Örnekler: `.env.example`, `server/.env.example`, `contracts/.env.example`.
+
+### İzleyici bahsi
+
+Bahis ekranındaki QR (`?room=ODA#/bahis`) telefonda bahis sayfasını açıyor. Bahisler testnet MON ile, gerçek para yok.
+
+- **Cüzdan:** İzleyici tarayıcıda bir burner cüzdan alıyor. Bakiyesi yetmezse sunucunun faucet'i bir kez 0.025 MON gönderiyor.
+- **Bahis:** 0.01 MON, kişi başı bir kez. Oran parimutuel: toplam havuz / kazanana yatırılan. Kasa payı yok; kimse bilemezse herkese iade.
+- **Sonuç:** Sunucu kazananı imzalayıp `settleBets` çağırıyor, sonra kazananlara 50'şer kişilik partilerle MON gönderiyor. Gönderilemeyen olursa alacak olarak yazılıyor (`claim()`); bir alıcı partiyi durduramıyor.
+- **Sadece ücretli odada:** Yarışçılar RacePool odasından okunuyor. Sunucu çökerse 1 gün sonra `expire()` ile herkese iade açılıyor.
+- **Gaz:** `placeBet` 104k gaz. Tek bir 32 baytlık yuvada süre, bahis sayısı ve 5 yarışçının sayıları duruyor; 0.025 MON'a sığması için böyle sıkıştırıldı.
+- **Faucet:** 100 izleyici 30 sn'de geliyor. Monad'ın rezerv kuralı yüzünden tek tek gönderim yetişmez; sunucu istekleri biriktirip `airdrop` ile tek işlemde gönderiyor.
+
+Uçtan uca test (yerel anvil): `server/e2e-bets.js` dosyasının başındaki talimat.
 
 ### Testnet bütçesi
 

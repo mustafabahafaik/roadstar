@@ -29,11 +29,20 @@ export const MAX_TRACK_SPEED = 140 // birim / saniye
 export const RACE_GAS_LIMITS = { startRace: 116000n, collect: 119000n, useSkill: 74000n, finishRace: 44000n }
 export const POOL_GAS_LIMITS = { createRoom: 115000n, joinRoom: 127000n, settle: 223000n, withdraw: 50000n, refund: 63000n }
 export const GARAGE_GAS_LIMITS = { buy: 86000n, equip: 90000n }
+// BetPool (izleyici bahsi). Sadece izleyicinin işlemleri sabit limitli; sunucunun işlemleri (openBets, settleBets,
+// payout, airdrop) estimateGas ile: sunucu iyimser akışta değil, tahmin doğru çıkar
+// Ölçüm (scripts/gas-measure.js, Monad): placeBet 104.2k (ilk ve 51. bahis aynı), claim 41.9k
+export const BET_GAS_LIMITS = { placeBet: 120000n, claim: 49000n }
 export const TRANSFER_GAS = 21000n // düz MON gönderimi: her zaman tam bu kadar (scripts/fund.js)
 
 // Ücretli odanın giriş ücreti (wei): odayı kuran oyun bunu yazar, botlar ve sunucu zincirdeki odadan okur.
 // 0.05 MON: testnet bütçesi kısıtlı. Değiştirirsen server BOT_LOW_BALANCE'ı da düşün (scripts/budget.js gösterir)
 export const ENTRY_FEE = 50_000_000_000_000_000n
+
+// İzleyici bahsi (BetPool.BET_AMOUNT ile aynı): herkes aynı tutarı yatırır, oran = havuz / kazanana yatırılan
+export const BET_AMOUNT = 10_000_000_000_000_000n // 0.01 MON
+// Faucet: yeni izleyicinin burner'ına bir kez. 0.01 bahis + placeBet gazı (120k × ~112 gwei ≈ 0.0134) sığar
+export const FAUCET_AMOUNT = 25_000_000_000_000_000n // 0.025 MON
 
 // Oyuncu renkleri: odaya giriş sırasına göre (lobi listesi, araba boyası, isim etiketi)
 export const PLAYER_COLORS = [0x00f0ff, 0xff3bd6, 0xffd23f, 0x7dff6b, 0xff7a3d]

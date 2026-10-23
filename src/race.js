@@ -14,6 +14,7 @@ import { createRemotePlayers } from './remotePlayers.js'
 import { escapeHtml, toCssColor } from './html.js'
 import { saveLastRace } from './landing.js'
 import { getMap } from './maps.js'
+import { fetchBets } from './betsApi.js'
 
 // Yarış akışı: lobi → geri sayım → yarış → bitiş kapısı (finished) ya da dnf.
 // Çok oyunculu: seed'i ve başlangıç ANINI sunucu verir (herkes aynı parkurda, aynı anda başlar).
@@ -204,6 +205,23 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     if (e.code === 'Escape' && !e.repeat && router.current === 'race') requestQuit()
   })
 
+  // --- HUD: sol altta izleyici bahisleri (ücretli odada, yarış sürerken; /bets 2 sn'de bir) ---
+  const betsHud = document.createElement('div')
+  betsHud.className = 'race-bets'
+  betsHud.hidden = true
+  document.body.appendChild(betsHud)
+  let betsTimer = null
+  async function pollBets() {
+    if (!room) return
+    try {
+      const d = await fetchBets(room.id)
+      betsHud.hidden = d.totalBets === undefined // bu odada bahis yok
+      if (betsHud.hidden) return
+      const pool = Number(formatEther(BigInt(d.pool))).toFixed(2)
+      betsHud.innerHTML = `<b>🎲 İzleyici bahisleri</b><span>${d.totalBets} bahis · havuz ${pool} MON</span><span>ort. onay ${d.avgConfirmMs !== null ? `${(d.avgConfirmMs / 1000).toFixed(2)} sn` : '—'}</span>`
+    } catch {}
+  }
+
   // --- HUD: sol üstte canlı sıralama (sadece çok oyunculu) ---
   const standingsHud = document.createElement('div')
   standingsHud.className = 'race-standings'
@@ -282,6 +300,10 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     startAt = at
     standingsHud.hidden = !multiplayer
     paidRace = multiplayer && Boolean(room?.chain)
+    if (paidRace) {
+      pollBets()
+      betsTimer = setInterval(pollBets, 2000)
+    }
 
     // Parkuru seed'den kur ve sahneye ekle (engeller + rampalar)
     // Harita: gökyüzü, ışık, pist renkleri (world), yerçekimi (car) ve engellerin görünüşü. Parkur seed'den: aynı
@@ -336,6 +358,8 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     renderResults()
     results.classList.add('show')
     router.go('results')
+    clearInterval(betsTimer)
+    betsHud.hidden = true
   }
 
   // "3 düşüş (1'ini kalkan kurtardı)" / "Düşüş yok"

@@ -1,5 +1,5 @@
 import { JsonRpcProvider, Wallet, Interface, keccak256, formatEther } from 'ethers'
-import { RACE_GAS_LIMITS, POOL_GAS_LIMITS, GARAGE_GAS_LIMITS, ENTRY_FEE } from '../shared/protocol.js'
+import { RACE_GAS_LIMITS, POOL_GAS_LIMITS, GARAGE_GAS_LIMITS, BET_GAS_LIMITS, ENTRY_FEE } from '../shared/protocol.js'
 
 // --- Ağ ve kontrat ---
 export const MONAD_TESTNET = {
@@ -17,6 +17,9 @@ export { ENTRY_FEE } // odayı kuranın seçtiği giriş ücreti: 0.05 MON (shar
 
 // GarageParts (görsel araba parçaları, ERC1155) adresi. Boşken garaj sadece önizleme yapar
 export const GARAGE_ADDRESS = import.meta.env.VITE_GARAGE_ADDRESS || '' // deploy edince adresi '' içine yapıştır
+
+// BetPool (izleyici bahsi) adresi. Boşken izleyici sayfası "bahis kapalı" der. server/.env BET_POOL_ADDRESS ile AYNI
+export const BET_ADDRESS = import.meta.env.VITE_BET_ADDRESS || ''
 
 export const explorerTx = (hash) => `${MONAD_TESTNET.explorer}/tx/${hash}`
 
@@ -48,15 +51,25 @@ const garageAbi = new Interface([
   'function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])',
 ])
 
+// BetPool: izleyici bahsi (0.01 MON, kişi başı bir kez), gönderilemeyen ödemeyi çekme
+const betAbi = new Interface([
+  'function placeBet(uint256 roomId, address racer) payable',
+  'function claim()',
+  'function pickOf(uint256 roomId, address bettor) view returns (uint8)',
+])
+
 // Her işlem hangi kontrata gider
 const CONTRACTS = {
   race: { address: RACE_ADDRESS, abi: raceAbi },
   pool: { address: POOL_ADDRESS, abi: poolAbi },
   garage: { address: GARAGE_ADDRESS, abi: garageAbi },
+  bet: { address: BET_ADDRESS, abi: betAbi },
 }
 const POOL_METHODS = new Set(['createRoom', 'joinRoom', 'settle', 'withdraw'])
 const GARAGE_METHODS = new Set(['buy', 'equip'])
-const contractFor = (method) => CONTRACTS[POOL_METHODS.has(method) ? 'pool' : GARAGE_METHODS.has(method) ? 'garage' : 'race']
+const BET_METHODS = new Set(['placeBet', 'claim'])
+const contractFor = (method) =>
+  CONTRACTS[POOL_METHODS.has(method) ? 'pool' : GARAGE_METHODS.has(method) ? 'garage' : BET_METHODS.has(method) ? 'bet' : 'race']
 
 // startRace makbuzundaki RaceStarted olayından yarış numarasını ve tohumu oku
 export function parseRaceStarted(receipt) {
@@ -78,7 +91,7 @@ export function parseRoomCreated(receipt) {
 
 // Gaz limitleri: ölçülen değer + taban ücret (21k) + pay. Monad ücreti limit üzerinden keser → dar tut.
 // Gaz limitleri shared/protocol.js'te (botlar ve betikler de kullanır; ölçüm: scripts/gas-measure.js)
-const GAS_LIMITS = { ...RACE_GAS_LIMITS, ...POOL_GAS_LIMITS, ...GARAGE_GAS_LIMITS }
+const GAS_LIMITS = { ...RACE_GAS_LIMITS, ...POOL_GAS_LIMITS, ...GARAGE_GAS_LIMITS, ...BET_GAS_LIMITS }
 const RECEIPT_POLL_MS = 150 // onayı kaç ms'de bir soralım (ölçüm hassasiyeti)
 const FEE_REFRESH_MS = 20000 // gas fiyatını ne sıklıkla güncelleyelim
 const BALANCE_REFRESH_MS = 8000
@@ -127,9 +140,14 @@ export function createChain(onChange = () => {}) {
   let polling = false // onay sorgusu sürüyor mu (üst üste binmesin)
   let lastError = null
 
+  // Ücret: ethers'ın varsayılanı maxFee = 2 × taban + bahşiş (Ethereum'un oynak ücretine karşı). Ama cüzdanda
+  // limit × maxFee + gönderilen değer kadar para BULUNMALI (işlem geçerlilik kuralı): 2 kat yazsaydık faucet'in
+  // 0.025 MON'u bir bahse yetmezdi. Monad'ın tabanı sabit; kesilen yine taban + bahşiş. Pay: tabanın %10'u
   async function refreshFees() {
-    const data = await provider.getFeeData()
-    fees = { maxFeePerGas: data.maxFeePerGas, maxPriorityFeePerGas: data.maxPriorityFeePerGas }
+    const [data, block] = await Promise.all([provider.getFeeData(), provider.getBlock('latest')])
+    const priority = data.maxPriorityFeePerGas ?? 0n
+    const base = block?.baseFeePerGas ?? data.gasPrice
+    fees = { maxFeePerGas: (base * 11n) / 10n + priority, maxPriorityFeePerGas: priority }
   }
 
   async function refreshBalance() {
@@ -279,6 +297,7 @@ export function createChain(onChange = () => {}) {
   }
   const readPool = (method, args) => read(CONTRACTS.pool, method, args) // getRoom, claimable
   const readGarage = (method, args) => read(CONTRACTS.garage, method, args) // loadoutOf, balanceOfBatch
+  const readBet = (method, args) => read(CONTRACTS.bet, method, args) // pickOf
 
   return {
     enabled,
@@ -290,6 +309,12 @@ export function createChain(onChange = () => {}) {
     stats,
     readPool,
     readGarage,
+    readBet,
+    betEnabled: BET_ADDRESS !== '',
+    whenReady: () => ready, // nonce, ücret ve bakiye ilk kez okundu
+    refreshBalance,
+    // Bu işlem (+ gönderilecek değer) bakiyeye sığar mı? En kötü durum: limit × maxFee + değer
+    canAfford: (method, value = 0n) => balance !== null && fees !== null && balance - reserved >= GAS_LIMITS[method] * fees.maxFeePerGas + value,
     // Bu cüzdanın bugüne kadar gönderdiği işlem sayısı = zincirdeki nonce'u (giriş sayfası istatistiği)
     getTxCount: () => provider.getTransactionCount(wallet.address, 'latest'),
     // Sunucuya "bu adres benim" kanıtı: metni burner anahtarıyla imzala (işlem değil, zincire gitmez)

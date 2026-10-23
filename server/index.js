@@ -19,10 +19,13 @@ import {
   RACE_TIMEOUT_MS, // 5 dakikada bitiremeyen DNF sayılır
   MAX_TRACK_SPEED,
   PLAYER_COLORS,
+  BET_AMOUNT,
+  FAUCET_AMOUNT,
   rankPlayers,
 } from '../shared/protocol.js'
 import { createPool, verifyOwnership } from './pool.js'
 import { createBotManager } from './bots.js'
+import { createBetPool } from './betpool.js'
 import { sanitizeLoadout } from '../src/parts.js'
 import { isMapId, DEFAULT_MAP } from '../src/maps.js'
 
@@ -66,6 +69,25 @@ if (pool) {
   console.log('RacePool ayarlı değil (server/.env): sadece ücretsiz yarış')
 }
 
+// --- İzleyici bahsi (BetPool). Bahis sadece ücretli odada: yarışçılar RacePool odasından okunur ---
+const betPool =
+  process.env.BET_POOL_ADDRESS && /^0x[0-9a-fA-F]{64}$/.test(process.env.RESULT_SIGNER_KEY ?? '')
+    ? createBetPool({
+        rpcUrl: process.env.RPC_URL || 'https://testnet-rpc.monad.xyz',
+        address: process.env.BET_POOL_ADDRESS,
+        signerKey: process.env.RESULT_SIGNER_KEY,
+        faucetKey: /^0x[0-9a-fA-F]{64}$/.test(process.env.FAUCET_KEY ?? '') ? process.env.FAUCET_KEY : null,
+        faucetAmount: process.env.FAUCET_AMOUNT ? parseEther(process.env.FAUCET_AMOUNT) : FAUCET_AMOUNT,
+        faucetBudget: parseEther(process.env.FAUCET_BUDGET || '3'),
+      })
+    : null
+if (betPool) {
+  console.log(`BetPool ${betPool.address} · operatör ${betPool.operatorAddress} · faucet ${betPool.faucetAddress ?? 'KAPALI (FAUCET_KEY yok)'}`)
+  if (!pool) console.warn('⚠️  BetPool var ama RacePool yok: bahis sadece ücretli odada açılır')
+} else {
+  console.log('BetPool ayarlı değil (BET_POOL_ADDRESS + RESULT_SIGNER_KEY): izleyici bahsi kapalı')
+}
+
 // --- Botlar (BOT_KEYS): boş koltukları doldurur. Ücretli modda kendi cüzdanlarıyla gerçekten öderler ---
 const botKeys = (process.env.BOT_KEYS ?? '')
   .split(',')
@@ -85,10 +107,149 @@ const bots = botKeys.length
 if (bots) bots.checkBalances()
 else console.log('BOT_KEYS yok: boş koltuklar botla dolmaz (node scripts/make-bots.js)')
 
-const httpServer = createServer((req, res) => {
+// --- Bahis turu: bahis başlayınca aç, yarış bitince kazananı yaz ve öde ---
+function openBetRound(room) {
+  if (!betPool || !room.chain) return // ücretsiz oda: bahis yok (yarışçılar RacePool odasından okunur)
+  const round = {
+    chainRoomId: room.chain.roomId,
+    bettingEndsAt: room.bettingEndsAt,
+    racers: [...room.players.values()].filter((p) => !p.left).map((p) => ({ id: p.id, name: p.name, color: p.color, address: p.address })),
+    winner: null,
+    settledAt: 0,
+    confirms: new Map(),
+  }
+  betRounds.set(room.id, round)
+  betPool
+    .open(round.chainRoomId, round.bettingEndsAt)
+    .then(() => console.log(`[${room.id}] 🎲 bahis açık: oda #${round.chainRoomId}, ${round.racers.length} yarışçı`))
+    .catch((err) => console.warn(`[${room.id}] bahis açılamadı:`, err.shortMessage ?? err.message))
+}
+
+function settleBetRound(room, standings) {
+  const round = betRounds.get(room.id)
+  if (!betPool || !round || round.settledAt || round.chainRoomId !== room.chain?.roomId) return
+  const first = standings[0]
+  round.winner = first?.status === 'finished' ? first.address : null // kimse bitiremediyse herkese iade
+  round.settledAt = Date.now()
+  betPool
+    .settleAndPay(round.chainRoomId, round.winner)
+    .then(({ total, refundAll }) => console.log(`[${room.id}] 🎲 bahis sonuçlandı: ${total} bahis${refundAll ? ' (herkese iade)' : ''}, ödemeler gönderildi`))
+    .catch((err) => console.warn(`[${room.id}] bahis sonuçlanamadı:`, err.shortMessage ?? err.message))
+}
+
+// GET /bets/:room → izleyici sayfası ve ana ekran (2 sn'de bir sorar). Zincir okuması önbellekli (betpool.js)
+async function betsView(roomName) {
+  const room = rooms.get(roomName)
+  const round = betRounds.get(roomName)
+  const base = { room: roomName, now: Date.now(), betAmount: BET_AMOUNT.toString(), raceStatus: room?.status ?? 'none' }
+  if (!betPool || !round) {
+    // Henüz tur yok: lobideki yarışçıları göster (bahis herkes hazır olunca açılacak)
+    const racers = room ? [...room.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, address: p.address })) : []
+    // disabled: sunucuda bahis yok · free: ücretsiz oda (bahis ücretli odada) · waiting: herkes hazır olunca açılacak
+    return { ...base, status: !betPool ? 'disabled' : room?.chain ? 'waiting' : 'free', racers, bettingEndsAt: room?.bettingEndsAt ?? 0 }
+  }
+  const book = await betPool.summary(round.chainRoomId)
+  const live = new Map(room ? [...room.players.values()].map((p) => [p.id, p]) : [])
+  const total = book.betCount
+  const racers = round.racers.map((r) => {
+    const i = book.racers.findIndex((a) => a.toLowerCase() === r.address?.toLowerCase())
+    const bets = i >= 0 ? book.counts[i] : 0
+    const p = live.get(r.id)
+    // index: kontrattaki sırası (pickOf bunu döndürür: sayfa yenilenince "kime yatırmıştım?")
+    return { ...r, index: i, bets, odds: bets ? total / bets : null, progress: p?.last.progress ?? 0, status: p?.status ?? 'left', finishMs: p?.finishMs ?? null }
+  })
+  const winnerCount = book.winner ? racers.find((r) => r.address === book.winner)?.bets ?? 0 : 0
+  const times = [...round.confirms.values()]
+  return {
+    ...base,
+    status: book.settled ? 'settled' : book.deadline === 0 ? 'opening' : Date.now() <= book.deadline + 999 ? 'open' : 'closed',
+    chainRoomId: String(round.chainRoomId),
+    bettingEndsAt: round.bettingEndsAt,
+    racers,
+    totalBets: total,
+    pool: (BET_AMOUNT * BigInt(total)).toString(),
+    winner: book.winner,
+    refundAll: book.refundAll,
+    payoutPerWinner: book.settled ? (book.refundAll ? BET_AMOUNT : winnerCount ? (BET_AMOUNT * BigInt(total)) / BigInt(winnerCount) : 0n).toString() : null,
+    txCount: total, // her bahis bir işlem
+    avgConfirmMs: times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null,
+  }
+}
+
+// CORS: tarayıcı başka adresten (Vercel) gelen istekte izin ister. Sadece oyunun adresi(leri)
+function cors(req, res) {
+  const origin = req.headers.origin
+  const allowed = CLIENT_ORIGIN === '*' ? '*' : CLIENT_ORIGIN.includes(origin) ? origin : null
+  if (allowed) res.setHeader('access-control-allow-origin', allowed)
+  res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
+  res.setHeader('access-control-allow-headers', 'content-type')
+}
+function json(res, status, body) {
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify(body))
+}
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let raw = ''
+    req.on('data', (chunk) => {
+      raw += chunk
+      if (raw.length > 2048) reject(new Error('çok büyük')) // küçük istekler bekliyoruz
+    })
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(raw || '{}'))
+      } catch {
+        reject(new Error('JSON değil'))
+      }
+    })
+  })
+}
+// Render gibi bir proxy'nin arkasında gerçek IP x-forwarded-for'un ilk elemanı
+const clientIp = (req) => String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket.remoteAddress
+
+async function handleHttp(req, res) {
+  cors(req, res)
+  if (req.method === 'OPTIONS') return res.writeHead(204).end()
+  const url = new URL(req.url, 'http://x')
+  const bets = url.pathname.match(/^\/bets\/([a-z0-9-]{1,20})(\/confirm)?$/)
+
+  if (req.method === 'GET' && bets && !bets[2]) return json(res, 200, await betsView(bets[1]))
+
+  // İzleyici "bahsim zincirde, şu kadar ms" der → doğrulayıp ortalama onay süresine kat
+  if (req.method === 'POST' && bets?.[2]) {
+    const round = betRounds.get(bets[1])
+    const { hash, ms } = await readJson(req)
+    if (!round || !/^0x[0-9a-fA-F]{64}$/.test(hash ?? '') || !isNum(ms)) return json(res, 400, { ok: false })
+    if (!round.confirms.has(hash) && (await betPool.verifyBet(hash, round.chainRoomId))) {
+      round.confirms.set(hash, Math.min(Math.max(ms, 0), 60000))
+    }
+    return json(res, 200, { ok: true })
+  }
+
+  // Faucet: yeni izleyicinin burner'ına bir kez FAUCET_AMOUNT (adres başına bir, IP başına en fazla 3, bütçe kadar)
+  if (req.method === 'POST' && url.pathname === '/faucet') {
+    if (!betPool) return json(res, 503, { ok: false, error: 'Bahis kapalı' })
+    const { address } = await readJson(req)
+    let addr
+    try {
+      addr = getAddress(String(address ?? '').trim().toLowerCase())
+    } catch {
+      return json(res, 400, { ok: false, error: 'Geçersiz adres' })
+    }
+    const result = await betPool.requestFaucet(addr, clientIp(req))
+    return json(res, result.status ?? 200, result)
+  }
+
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
   res.end('ROADSTAR sunucusu çalışıyor\n') // tarayıcıdan açınca "çalışıyor mu?" kontrolü
-})
+}
+
+const httpServer = createServer((req, res) =>
+  handleHttp(req, res).catch((err) => {
+    console.warn('HTTP hatası:', err.shortMessage ?? err.message)
+    if (!res.headersSent) json(res, 500, { ok: false, error: 'Sunucu hatası' })
+  }),
+)
 const io = new Server(httpServer, { cors: { origin: CLIENT_ORIGIN } })
 
 // --- Odalar ---
@@ -101,6 +262,9 @@ const io = new Server(httpServer, { cors: { origin: CLIENT_ORIGIN } })
 //         autoStartAt: 0 }  (ücretli oda dolunca en geç başlama anı)
 // player: { id, name, color, address, paid, ready, status, state, last, finishMs, left, rejected, lastCheatLog }
 const rooms = new Map()
+// Bahis turları oda adıyla (oda silinse de izleyici sonucu görebilsin):
+// { chainRoomId, bettingEndsAt, racers: [{ id, name, color, address }], winner, settledAt, confirms: Map<hash, ms> }
+const betRounds = new Map()
 
 const cleanName = (text, fallback, max) => String(text ?? '').trim().slice(0, max) || fallback
 const cleanRoom = (text) =>
@@ -242,6 +406,7 @@ function startBetting(room) {
   room.bettingEndsAt = Date.now() + BETTING_DURATION_MS
   const names = [...room.players.values()].filter((p) => !p.left).map((p) => p.name)
   console.log(`[${room.id}] herkes hazır → ${BETTING_DURATION_MS / 1000} sn bahis: ${names.join(', ')}`)
+  openBetRound(room)
   io.to(room.id).emit('betting', { bettingEndsAt: room.bettingEndsAt })
   broadcastRoom(room)
 }
@@ -308,6 +473,7 @@ async function endRace(room) {
   }
   console.log(`[${room.id}] yarış bitti: ${standings.map((p, i) => `${i + 1}. ${p.name} (${p.status})`).join(', ')}`)
   io.to(room.id).emit('results', { standings, settlement })
+  settleBetRound(room, standings)
 
   // Lobiye dön. Ücretli oda bir kez kullanılır: bir sonraki ücretli yarış yeni zincir odası açar
   room.status = 'lobby'

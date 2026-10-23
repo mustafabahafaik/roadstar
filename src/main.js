@@ -28,6 +28,7 @@ import { createAudio, createSoundToggle } from './audio.js'
 import { createTouchControls } from './touch.js'
 import { createDebugPanel } from './debugPanel.js'
 import { createBetting } from './betting.js'
+import { createSpectator } from './spectator.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -232,6 +233,9 @@ gameState.onChange((next) => {
 // Bahis ekranı (betting.js): herkes hazır olunca 30 sn, yarışçıların arabaları yan yana vitrinde + QR
 const betting = createBetting({ scene, camera, cameraModes, car, smoke, net, router })
 
+// İzleyici sayfası (spectator.js, #/bahis): telefondan bahis. 3D sahne arkada çizilmez (aşağıda)
+createSpectator({ router, chain })
+
 // F3: kamera ve araba durumu paneli (debugPanel.js). Telefonda adrese ?debug ekle
 const debugPanel = createDebugPanel({
   car,
@@ -305,6 +309,7 @@ const IDLE_FPS = 30
 let lastFrameTime = -Infinity
 
 renderer.setAnimationLoop((time) => {
+  if (router.current === 'bets') return // izleyici sayfası ekranı kaplar: 100 telefonda boşuna 3D çizme
   const idle = router.current === 'landing' || router.current === 'garage'
   const minFrameTime = 1000 / (idle ? IDLE_FPS : quality.maxFps)
   if (time - lastFrameTime < minFrameTime - 2) return // -2 ms tolerans: 60 Hz ekranda kare atlamasın

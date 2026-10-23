@@ -18,7 +18,7 @@ import { gunzipSync } from 'node:zlib'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { JsonRpcProvider, Interface, AbiCoder, Wallet, ContractFactory, keccak256, getBytes, toBeHex, parseEther, formatEther, formatUnits, hexlify, randomBytes } from 'ethers'
-import { RACE_GAS_LIMITS, POOL_GAS_LIMITS, GARAGE_GAS_LIMITS } from '../shared/protocol.js'
+import { RACE_GAS_LIMITS, POOL_GAS_LIMITS, GARAGE_GAS_LIMITS, BET_GAS_LIMITS } from '../shared/protocol.js'
 
 const RPC_URL = process.env.RPC_URL || 'https://testnet-rpc.monad.xyz'
 const RACE = process.env.RACE_ADDRESS || '0x7cBF7eAbB758CD0DBEAd1DFa9Adc8FA9A6e6f434'
@@ -187,16 +187,24 @@ async function measureRacePool() {
     console.log(`\nRacePool (anvil'de ${address}, ölçüm Monad'da)`)
     const fee = parseEther('0.05')
 
-    // anvil'deki kontratın şu anki kodu + depolaması + bakiyesi → Monad tahmini için override
-    async function poolOverride(from) {
+    // anvil'deki kontratların şu anki kodu + depolaması + bakiyesi → Monad tahmini için override.
+    // patch(adres, depolama): ölçümden önce depolamayı değiştirmek için (ör. bahis süresini geçmişe çek)
+    async function overrideOf(addresses, from, { patch, rich = [] } = {}) {
       const dump = await local.send('anvil_dumpState', [])
       const raw = Buffer.from(dump.slice(2), 'hex')
       const state = JSON.parse((raw[0] === 0x1f ? gunzipSync(raw) : raw).toString())
-      const acc = state.accounts[address] ?? state.accounts[Object.keys(state.accounts).find((k) => k.toLowerCase() === address)]
-      const storage = {}
-      for (const [k, v] of Object.entries(acc.storage)) storage[slot32(k)] = slot32(v)
-      return { [address]: { code: acc.code, state: storage, balance: toBeHex(BigInt(acc.balance)) }, [from]: { balance: RICH } }
+      const result = { [from]: { balance: RICH } }
+      for (const a of rich) result[a] = { balance: RICH } // var olan hesaplar (yeni hesaba MON göndermek daha pahalı)
+      for (const addr of addresses) {
+        const acc = state.accounts[addr] ?? state.accounts[Object.keys(state.accounts).find((k) => k.toLowerCase() === addr)]
+        const storage = {}
+        for (const [k, v] of Object.entries(acc.storage)) storage[slot32(k)] = slot32(v)
+        patch?.(addr, storage)
+        result[addr] = { code: acc.code, state: storage, balance: toBeHex(BigInt(acc.balance)) }
+      }
+      return result
     }
+    const poolOverride = (from) => overrideOf([address], from)
     // Önce Monad'da ölç (işlemden ÖNCEKİ durumla), sonra anvil'de gerçekten yap (sonraki adımın durumu için).
     // fn null: sadece anvil'de yap (ölçülemeyen ara adım)
     async function step(fn, label, wallet, data, value = 0n) {
@@ -216,6 +224,9 @@ async function measureRacePool() {
     for (let i = 0; i < 5; i++) {
       await step('joinRoom', i === 4 ? '5. oyuncu (odayı başlatır)' : `${i + 1}. oyuncu (5 kişilik oda)`, players[i], pool.encodeFunctionData('joinRoom', [2]), fee)
     }
+    // Oda 2 başladı: izleyici bahsini burada ölç (BetPool yarışçıları bu odadan okur)
+    await measureBets({ local, raceAddress: address, signer, overrideOf, winner: players[2].address })
+
     const ranking = [players[2], players[4], players[0], players[1], players[3]].map((w) => w.address)
     const hash = keccak256(coder.encode(['uint256', 'address', 'uint256', 'address[]'], [10143, address, 2, ranking]))
     const signature = await signer.signMessage(getBytes(hash))
@@ -228,8 +239,66 @@ async function measureRacePool() {
   }
 }
 
+// ---------------------------------------------------------------- BetPool (anvil'de kur, Monad'da tahmin et)
+// En kötü durumlar: ilk bahis (oda listesi ilk kez yazılır), 50 kazananlı ödeme partisi, 50 kişilik faucet partisi
+async function measureBets({ local, raceAddress, signer, overrideOf, winner }) {
+  const artifact = `${root}contracts/out/BetPool.sol/BetPool.json`
+  if (!existsSync(artifact)) throw new Error('önce: cd contracts && forge build')
+  const { abi, bytecode } = JSON.parse(readFileSync(artifact, 'utf8'))
+  const bet = new Interface(abi)
+  const fund = async (w) => (await local.send('anvil_setBalance', [w.address, RICH]), w)
+  const deployer = await fund(Wallet.createRandom().connect(local))
+  const operator = await fund(signer.connect(local))
+  const contract = await new ContractFactory(abi, bytecode.object, deployer).deploy(raceAddress, operator.address)
+  await contract.waitForDeployment()
+  const betAddress = (await contract.getAddress()).toLowerCase()
+  console.log(`\nBetPool (anvil'de ${betAddress}, ölçüm Monad'da)`)
+  const run = async (w, data, value = 0n) => (await w.sendTransaction({ to: betAddress, data, value })).wait()
+  const ROOM = 2n
+  const BET = parseEther('0.01')
+  const deadline = Math.floor(Date.now() / 1000) + 3 * 3600 // Monad'ın "şimdi"sinde açık olsun
+
+  let data = bet.encodeFunctionData('openBets', [ROOM, deadline])
+  await measure('openBets', "5 yarışçı RacePool'dan okunur", { from: operator.address, to: betAddress, data }, await overrideOf([betAddress, raceAddress], operator.address))
+  await run(operator, data)
+
+  const fans = []
+  for (let i = 0; i < 51; i++) fans.push(await fund(Wallet.createRandom().connect(local)))
+  data = bet.encodeFunctionData('placeBet', [ROOM, winner])
+  await measure('placeBet', 'odanın ilk bahsi', { from: fans[0].address, to: betAddress, data, value: BET }, await overrideOf([betAddress], fans[0].address))
+  for (let i = 0; i < 50; i++) await run(fans[i], data, BET) // hepsi kazanana: ödemede en kötü durum (50 transfer)
+  await measure('placeBet', '51. bahis', { from: fans[50].address, to: betAddress, data, value: BET }, await overrideOf([betAddress], fans[50].address))
+
+  // Sonuç: bahis süresi geçmiş olmalı → depolamadaki süreyi Monad'ın şimdisinden öncesine çek (books[2], 0. yuva, düşük 64 bit)
+  const bookSlot = slot32(mapSlot(ROOM, 0))
+  const past = (addr, storage) => {
+    if (addr !== betAddress) return
+    const value = BigInt(storage[bookSlot])
+    storage[bookSlot] = slot32((value & ~((1n << 64n) - 1n)) | BigInt(Math.floor(Date.now() / 1000) - 600))
+  }
+  const hash = keccak256(coder.encode(['string', 'uint256', 'address', 'uint256', 'address'], ['BET', 10143, betAddress, ROOM, winner]))
+  data = bet.encodeFunctionData('settleBets', [ROOM, winner, await signer.signMessage(getBytes(hash))])
+  await measure('settleBets', 'kazanan + imza', { from: operator.address, to: betAddress, data }, await overrideOf([betAddress], operator.address, { patch: past }))
+  await local.send('evm_setNextBlockTimestamp', [deadline + 1])
+  await run(operator, data)
+
+  data = bet.encodeFunctionData('payout', [ROOM, 0, 50])
+  await measure('payout', '50 kazanana gönderim', { from: operator.address, to: betAddress, data }, await overrideOf([betAddress], operator.address, { rich: fans.map((f) => f.address) }))
+
+  const claimer = fans[0].address
+  const claimSlot = keccak256(coder.encode(['address', 'uint256'], [claimer, 4])) // claimable: 4. yuva (books, bets, racerSlot, pickOf, claimable)
+  const setClaim = (a, st) => {
+    if (a === betAddress) st[slot32(claimSlot)] = slot32(BET)
+  }
+  await measure('claim', 'alacak çekilir', { from: claimer, to: betAddress, data: bet.encodeFunctionData('claim') }, await overrideOf([betAddress], claimer, { patch: setClaim }))
+
+  const recipients = Array.from({ length: 50 }, () => Wallet.createRandom().address)
+  const faucet = Wallet.createRandom().address
+  await measure('airdrop', 'faucet: 50 yeni adrese', { from: faucet, to: betAddress, data: bet.encodeFunctionData('airdrop', [recipients]), value: parseEther('0.025') * 50n }, await overrideOf([betAddress], faucet))
+}
+
 // ---------------------------------------------------------------- Sonuç
-const current = { ...RACE_GAS_LIMITS, ...GARAGE_GAS_LIMITS, ...POOL_GAS_LIMITS }
+const current = { ...RACE_GAS_LIMITS, ...GARAGE_GAS_LIMITS, ...POOL_GAS_LIMITS, ...BET_GAS_LIMITS }
 await throttle()
 const gasPrice = BigInt(await monad.send('eth_gasPrice', []))
 const table = {}

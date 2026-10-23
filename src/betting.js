@@ -4,11 +4,13 @@ import { createCarModel } from './carModel.js'
 import { createThrusters } from './thrusters.js'
 import { applyLoadout } from './parts.js'
 import { escapeHtml, toCssColor } from './html.js'
+import { formatEther } from 'ethers'
+import { fetchBets, formatOdds } from './betsApi.js'
 
 // Bahis ekranı (herkes hazır olunca, yarıştan önce 30 sn). Yarışçılarda ve ana ekranda aynı:
 // ortada QR ("Kim kazanır? Bahis yap!" → ?room=ODA#/bahis), büyük geri sayım, yarışçıların arabaları yan yana
 // 3D vitrinde (kendi garaj parçalarıyla) ve her biri farklı bir gösteri yapar. Kapanış anı sunucunun
-// bettingEndsAt'i: herkesin ekranında aynı saniye. Bahis sayıları ve oranlar sonraki adımda (/bets) gelecek.
+// bettingEndsAt'i: herkesin ekranında aynı saniye. Bahis sayıları ve oranlar sunucunun /bets'inden (2 sn'de bir).
 
 const SPACING = 8.5 // arabalar arası (araba ~4.1 geniş; dönen, yuvarlanan komşusuna çarpmasın)
 const AHEAD = 34 // vitrin, başlangıç çizgisinin kaç birim önünde
@@ -73,6 +75,7 @@ export function createBetting({ scene, camera, cameraModes, car, smoke, net, rou
         <figure class="betting-qr"><img alt="Bahis sayfası için QR kod" width="180" height="180"><figcaption>Telefonla okut</figcaption></figure>
         <div class="betting-clock"><b>30</b><small>sn sonra bahisler kapanır</small></div>
       </div>
+      <p class="betting-pool" hidden></p>
     </div>
     <div class="betting-cars"></div>`
   document.body.appendChild(el)
@@ -157,8 +160,23 @@ export function createBetting({ scene, camera, cameraModes, car, smoke, net, rou
     cars.delete(id)
   }
 
+  // Canlı bahisler: sunucunun /bets'i (izleyici sayfasıyla aynı veri). Ücretsiz odada bahis yok: yazı gizli
+  let pollTimer = null
+  async function pollBets() {
+    try {
+      const data = await fetchBets(room.id)
+      const byPlayer = Object.fromEntries((data.racers ?? []).map((r) => [r.id, { count: r.bets, odds: r.odds }]))
+      if (data.totalBets !== undefined) setOdds(byPlayer)
+      const pool = el.querySelector('.betting-pool')
+      pool.hidden = data.totalBets === undefined
+      if (!pool.hidden) pool.textContent = `🎲 ${data.totalBets} bahis · havuz ${Number(formatEther(BigInt(data.pool))).toFixed(2)} MON`
+    } catch {}
+  }
+
   function show() {
     active = true
+    pollBets()
+    pollTimer = setInterval(pollBets, 2000)
     el.hidden = false
     time = 0
     // Vitrin başlangıç çizgisinin önünde: arabanın (henüz kilitli) çerçevesi pistin yönünü verir
@@ -175,6 +193,7 @@ export function createBetting({ scene, camera, cameraModes, car, smoke, net, rou
 
   function hide() {
     active = false
+    clearInterval(pollTimer)
     el.hidden = true
     for (const id of [...cars.keys()]) removeCar(id)
     scene.remove(group)
@@ -196,11 +215,11 @@ export function createBetting({ scene, camera, cameraModes, car, smoke, net, rou
     for (const id of [...cars.keys()]) if (!present.has(id)) removeCar(id)
   }
 
-  // Sonraki adım (/bets): { [oyuncu id]: { count, odds } } → arabanın üstündeki yazı
+  // /bets: { [oyuncu id]: { count, odds } } → arabanın üstündeki yazı
   function setOdds(byPlayer) {
     for (const [id, c] of cars) {
       const o = byPlayer?.[id]
-      c.odds.textContent = o?.count ? `${o.count} bahis · ${o.odds ? `${o.odds.toFixed(2)}x` : '—'}` : 'bahis yok · oran —'
+      c.odds.textContent = o?.count ? `${o.count} bahis · ${formatOdds(o.odds)}` : 'bahis yok · oran —'
     }
   }
 
@@ -256,25 +275,6 @@ export function createBetting({ scene, camera, cameraModes, car, smoke, net, rou
     node.style.visibility = visible ? 'visible' : 'hidden'
     if (visible) node.style.transform = `translate(${((local.x + 1) / 2) * window.innerWidth}px, ${((1 - local.y) / 2) * window.innerHeight}px) translate(-50%, -50%)`
   }
-
-  // İzleyici sayfası (#/bahis, QR'ın açtığı adres). Bahis arayüzü sonraki adımda: şimdilik yer tutucu
-  const spectator = document.createElement('div')
-  spectator.className = 'bets-page'
-  spectator.hidden = true
-  spectator.innerHTML = `
-    <h1>ROADSTAR</h1>
-    <h2>Bahis · oda <b class="bets-room"></b></h2>
-    <p>Kim kazanır? Bahis burada yapılacak (yakında).</p>
-    <button class="race-start bets-home">Ana sayfa</button>`
-  document.body.appendChild(spectator)
-  spectator.querySelector('.bets-home').addEventListener('click', () => router.go('landing'))
-  router.register('bets', {
-    enter() {
-      spectator.querySelector('.bets-room').textContent = new URLSearchParams(window.location.search).get('room') ?? 'monad'
-      spectator.hidden = false
-    },
-    leave: () => (spectator.hidden = true),
-  })
 
   return { sync, update, setOdds }
 }
