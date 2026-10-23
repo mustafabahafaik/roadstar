@@ -114,7 +114,8 @@ const DNF_TEXT = {
 }
 
 // getFallStats: { falls, saves } (fall.js) → sonuç ekranında "3 düşüş"
-export function createRace({ scene, car, chain, gameState, net, router, world, getMapId, getLoadout, audio, onCourse, getScore, getFallStats, showMessage, holdMessage }) {
+// onRoom(room): her oda güncellemesi (bahis ekranı arabaları buna göre çizer / kaldırır)
+export function createRace({ scene, car, chain, gameState, net, router, world, getMapId, getLoadout, audio, onCourse, getScore, getFallStats, onRoom, showMessage, holdMessage }) {
   const race = { id: null, seed: null, onChain: false } // zincirdeki yarış numarası ve token seed'i
   let items = null
   let multiplayer = false
@@ -237,7 +238,7 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
     leave(next) {
       lobby.hide()
       // Odaya girip geri dönen: sayfayı temiz yükle (sunucu bağlantı kopunca koltuğu boşaltır)
-      if (next !== 'race' && lobby.joined) router.reloadTo('landing')
+      if (next !== 'race' && next !== 'betting' && lobby.joined) router.reloadTo('landing')
     },
   })
   router.register('race', {}) // HUD'u CSS gösterir (body[data-screen="race"])
@@ -247,9 +248,12 @@ export function createRace({ scene, car, chain, gameState, net, router, world, g
   net.on('room', (r) => {
     room = r
     lobby.render(r)
-    // Lobideyken arka plan odanın haritası olsun: herkes katılınca hangi haritada yarışacağını görür
-    if (router.current === 'lobby' && r.map) world.setMap(r.map)
+    // Lobideyken (ve bahiste) arka plan odanın haritası olsun: herkes hangi haritada yarışacağını görür
+    if ((router.current === 'lobby' || router.current === 'betting') && r.map) world.setMap(r.map)
     remote.syncRoom(r.players, net.id) // yeni gelene araba ekle, gideni çıkar
+    onRoom?.(r)
+    // Herkes hazır dedi: sunucu bahsi açtı (30 sn, bettingEndsAt). Bitince sunucu 'start' gönderir → beginCountdown
+    if (r.status === 'betting' && router.current === 'lobby' && lobby.joined) router.go('betting')
   })
   // Sunucu seed ile birlikte haritayı da gönderir: odadaki herkes aynı parkuru AYNI haritada görür
   net.on('start', ({ seed, startAt: at, map }) => beginCountdown({ seed, startAt: at, multiplayer: true, map }))

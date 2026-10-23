@@ -1,6 +1,7 @@
 // Basit ekran yönlendirici (router): oyun aynı anda TEK bir ekrandadır, geçişler kurallıdır.
 //
-//   landing ⇄ garage ──▶ lobby ──▶ race ──▶ results ──▶ landing (ya da tekrar lobby)
+//   landing ⇄ garage ──▶ lobby ──▶ betting (30 sn bahis) ──▶ race ──▶ results ──▶ landing (ya da tekrar lobby)
+//   bets: izleyicinin bahis sayfası (lobideki / bahis ekranındaki QR: ?room=ODA#/bahis)
 //      └──────────────────▲  ◀── geri
 //
 // Her ekran { enter(params, önceki), leave(sonraki) } verir: router eskisini kapatır, yenisini açar.
@@ -8,11 +9,13 @@
 // Yarış ve sonucun adresi yok: sayfa yenilenince yarışın ortasına dönülemez (seed, süre, zincir işlemleri gider).
 // <body data-screen="..."> da ekranın adı olur: CSS hangi HUD'un görüneceğine buna bakarak karar verir.
 
-const ROUTES = { landing: '#/', garage: '#/garaj', lobby: '#/lobi' }
+const ROUTES = { landing: '#/', garage: '#/garaj', lobby: '#/lobi', bets: '#/bahis' }
 const TRANSITIONS = {
-  landing: ['garage', 'lobby'],
+  landing: ['garage', 'lobby', 'bets'],
   garage: ['landing', 'lobby'],
-  lobby: ['landing', 'race'],
+  lobby: ['landing', 'betting', 'race'], // race: tek başına yarış (bahis yok)
+  betting: ['race', 'landing'], // bahis bitince yarış; geri tuşu: odadan çık (sayfa yenilenir, koltuk boşalır)
+  bets: ['landing'],
   race: ['results'],
   results: ['landing', 'lobby'],
 }

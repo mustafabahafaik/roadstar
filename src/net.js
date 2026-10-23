@@ -94,6 +94,8 @@ export function createNet() {
     // "joinRoom yaptım": sunucu zincirden doğrular (birkaç kez deneyebilir, süre uzun)
     chainJoined: (roomId) => socket.timeout(15000).emitWithAck('chainJoined', { roomId }),
     setReady: (ready) => socket.emit('ready', ready),
+    // Host: boş koltukları botla doldur → { ok, error? }
+    fillBots: () => socket.timeout(5000).emitWithAck('fillBots'),
     // volatile: bağlantı o an meşgulse bu paketi at, 50 ms sonra yenisi zaten gelecek
     sendState: (state) => socket.volatile.emit('state', state),
     // Son durum volatile DEĞİL: sunucu bitişi kabul etmek için son ilerlemeyi mutlaka görmeli

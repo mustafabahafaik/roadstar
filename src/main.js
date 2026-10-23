@@ -27,6 +27,7 @@ import { createMeteors } from './meteors.js'
 import { createAudio, createSoundToggle } from './audio.js'
 import { createTouchControls } from './touch.js'
 import { createDebugPanel } from './debugPanel.js'
+import { createBetting } from './betting.js'
 
 // --- 1. Sahne ---
 const scene = new THREE.Scene()
@@ -162,6 +163,7 @@ const race = createRace({
   audio,
   getScore: () => tricks.score,
   getFallStats: () => fall.stats, // fall aşağıda oluşuyor: ilk çağrı yarış sonunda
+  onRoom: (room) => betting.sync(room), // bahis ekranı aşağıda oluşuyor (kamera modlarına ihtiyacı var)
   showMessage,
   holdMessage,
   // info: { id, seed, onChain }. İyimser arayüz: etki oyunda hemen uygulanır, işlem arkada gider
@@ -226,6 +228,9 @@ gameState.onChange((next) => {
   controls.enabled = false
   cameraModes.resetForRace()
 })
+
+// Bahis ekranı (betting.js): herkes hazır olunca 30 sn, yarışçıların arabaları yan yana vitrinde + QR
+const betting = createBetting({ scene, camera, cameraModes, car, smoke, net, router })
 
 // F3: kamera ve araba durumu paneli (debugPanel.js). Telefonda adrese ?debug ekle
 const debugPanel = createDebugPanel({
@@ -332,6 +337,7 @@ function simulate(realDelta) {
   if (controls.enabled) controls.update() // damping açıkken her karede çağrılmalı
   else cameraModes.update(realDelta) // kamera gerçek zamanla: ağır çekimde de akıcı
   debugPanel.update(realDelta)
+  betting.update(realDelta) // vitrin gösterileri ve geri sayım (sadece bahis ekranındayken)
 
   // Sesler: motor (hız + boost), itici (roket gücü), ağır çekim, dinleyici = kamera, rakip motorları
   audio.update({

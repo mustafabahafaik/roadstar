@@ -18,7 +18,8 @@
 
 - **Yarış:** 3000 metrelik pist, bitiş kapısı. Parkur (engeller, rampalar) tek bir **seed**'den üretiliyor: aynı seed herkes için birebir aynı pist.
 - **Çok oyunculu:** 5 kişiye kadar oda. Sunucu herkese aynı seed'i ve aynı başlangıç anını gönderiyor (ping/pong saat eşitleme). Durumlar saniyede 20 kez gönderiliyor ve sunucu her birini beklemeden odadakilere iletiyor. Rakipler gönderildikleri ortak saate göre biraz geriden interpolasyonla çiziliyor; bu gecikme ağın dalgalanmasına göre kendini ayarlıyor. Paket gecikirse araba donmuyor: son hızıyla pist boyunca tahmin ediliyor (dead reckoning).
-- **Botlar:** Oda 20 sn'de dolmazsa boş koltuklara botlar geliyor. Botlar insanlarla aynı protokolü kullanıyor ve ücretli odada kendi cüzdanlarıyla gerçekten ödeme yapıyor.
+- **Lobi → bahis → yarış:** Odadaki herkes "hazırım" deyince 30 sn'lik bahis ekranı açılıyor. Ekranda ortada izleyicilerin okutacağı QR (`?room=ODA#/bahis`), büyük bir geri sayım ve yarışçıların arabaları var; her araba kendi garaj parçalarıyla farklı bir gösteri yapıyor. Bahis kapanınca 3 sn geri sayım ve yarış başlıyor. Bahis sırasında kopanın koltuğu boş kalıyor, yarış yine başlıyor.
+- **Botlar:** Odayı açan kişi (host) lobide "Boş koltukları botla doldur"a basınca geliyorlar. Eski otomatik doldurma (20 sn) için sunucuda `AUTO_BOTS=1`. Botlar insanlarla aynı protokolü kullanıyor ve ücretli odada kendi cüzdanlarıyla gerçekten ödeme yapıyor.
 - **Zincirde:**
   - Yarış seed'i zincirden geliyor (önceden bilinemez).
   - Toplanan tokenlar ERC-1155 olarak mint ediliyor, skill kullanılınca yakılıyor.
@@ -106,7 +107,7 @@ npm --prefix server install
 npm run demo
 ```
 
-**İnternet yoksa:** Zincire gitmiyor; ücretli oda kapalı, botlar ücretsiz odaları dolduruyor.
+**İnternet yoksa:** Zincire gitmiyor; ücretli oda kapalı. Boş koltukları host lobideki düğmeyle botla dolduruyor.
 
 ```bash
 npm run demo:offline
@@ -135,6 +136,7 @@ cd contracts && forge test
 | `server/.env` | `RESULT_SIGNER_KEY` | Sıralamayı imzalayan anahtar (gizli) |
 | `server/.env` | `POOL_ADDRESS` | RacePool adresi; boşsa sadece ücretsiz yarış |
 | `server/.env` | `BOT_KEYS` | Bot cüzdanları (`node scripts/make-bots.js` üretir) |
+| `server/.env` | `AUTO_BOTS` | `1`: oda 20 sn'de dolmazsa botlar kendiliğinden gelir, oda dolunca hazır olmayan varsa da başlar (varsayılan kapalı) |
 | `server/.env` | `CLIENT_ORIGIN` | Oyunun adresi (CORS); internette Vercel adresi |
 | `.env` / Vercel | `VITE_SERVER_URL` | Sunucunun adresi; boşsa sayfayı sunan bilgisayarın 3001 portu |
 | `.env` / Vercel | `VITE_RACE_ADDRESS`, `VITE_POOL_ADDRESS`, `VITE_GARAGE_ADDRESS` | Kontrat adresleri |

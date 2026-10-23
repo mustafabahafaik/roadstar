@@ -5,6 +5,9 @@ export const RACE_LENGTH = 3000 // pist uzunluğu (birim). track.js buradan alı
 export const MAX_PLAYERS = 5 // bir odada en fazla
 export const MIN_PLAYERS = 2 // "herkes hazır" ile başlamak için en az (tek kişi: lobide "Tek başına")
 export const COUNTDOWN_MS = 3000 // sunucu "şu kadar ms sonra başla" der
+// Herkes hazır olunca yarıştan önce bahis süresi: izleyiciler QR'dan "kim kazanır?" der. Kapanış anı sunucunun
+// bettingEndsAt'i (herkese aynı sayı); sonra COUNTDOWN_MS'lik geri sayım ve yarış
+export const BETTING_MS = 30 * 1000
 // DNF (bitiremedi) sadece: bağlantı kopması, bu süre içinde bitirememek ya da "Yarıştan çık". Düşmek DNF değil
 export const RACE_TIMEOUT_MS = 5 * 60 * 1000
 

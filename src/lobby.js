@@ -1,7 +1,7 @@
 import { formatEther, getAddress } from 'ethers'
 import QRCode from 'qrcode'
 import { RACE_LENGTH } from './track.js'
-import { MIN_PLAYERS, MAX_PLAYERS, ownershipMessage } from '../shared/protocol.js'
+import { MIN_PLAYERS, MAX_PLAYERS, BETTING_MS, ownershipMessage } from '../shared/protocol.js'
 import { SERVER_URL } from './net.js'
 import { ENTRY_FEE, parseRoomCreated } from './chain.js'
 import { escapeHtml, toCssColor } from './html.js'
@@ -59,6 +59,7 @@ export function createLobby({ net, chain, getLoadout, getMapId, onSolo, onBack }
       </div>
 
       <button class="race-start lobby-ready">HAZIRIM</button>
+      <button class="lobby-fill" hidden>Boş koltukları botla doldur</button>
       <p class="race-sub lobby-hint"></p>
       <p class="lobby-bots" hidden></p>
       <div class="lobby-qr" hidden>
@@ -187,6 +188,19 @@ export function createLobby({ net, chain, getLoadout, getMapId, onSolo, onBack }
 
   $('.lobby-solo').addEventListener('click', onSolo)
 
+  // Host'un yedeği: arkadaşlardan biri gelmezse boş koltuklara bot (botlar hazır gelir)
+  const fillButton = $('.lobby-fill')
+  fillButton.addEventListener('click', async () => {
+    fillButton.disabled = true
+    try {
+      const res = await net.fillBots()
+      setStatus(res.ok ? `${res.empty} boş koltuğa bot geliyor…` : res.error, !res.ok)
+    } catch {
+      setStatus('Sunucu cevap vermedi', true)
+    }
+    setTimeout(() => (fillButton.disabled = false), 3000) // botlar gelene kadar tekrar basılmasın
+  })
+
   // Bot geri sayımı: sunucu "şu anda dolduracağım" der (botFillAt), kalan süreyi sunucu saatiyle sayarız
   const botsLine = $('.lobby-bots')
   const botTimer = setInterval(() => {
@@ -260,11 +274,14 @@ export function createLobby({ net, chain, getLoadout, getMapId, onSolo, onBack }
     readyButton.disabled = mustPay
     readyButton.textContent = mustPay ? 'ÖNCE ÜCRETİ YATIR' : ready ? 'HAZIR ✓ (vazgeç)' : 'HAZIRIM'
     readyButton.classList.toggle('on', ready)
+    // Bot düğmesi sadece odayı açana (host), sunucuda bot cüzdanı ve boş koltuk varsa
+    fillButton.hidden = !(room.hostId === net.id && room.botsAvailable && room.players.length < capacity && room.status === 'lobby')
+    const bettingText = `${BETTING_MS / 1000} sn bahis, sonra yarış`
     $('.lobby-hint').textContent = paid
       ? room.autoStartAt
         ? 'Herkes ödedi: hazır olmayan varsa 15 sn içinde yine başlar'
-        : `Herkes ödeyip hazır olunca başlar (${capacity} kişi)`
-      : `Herkes hazır olunca (en az ${MIN_PLAYERS} kişi) ya da oda dolunca 3 sn sonra başlar`
+        : `Herkes ödeyip hazır olunca ${bettingText} (${capacity} kişi)`
+      : `Odadaki herkes hazır olunca (en az ${MIN_PLAYERS} kişi) ${bettingText}`
   }
 
   return {

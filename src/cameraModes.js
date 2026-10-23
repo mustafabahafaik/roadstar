@@ -5,6 +5,7 @@ import * as THREE from 'three'
 //   'fall'  → düşüş: arabanın düştüğü tarafta, yanında ve biraz yukarıda durup arabaya bakar
 //   'showcase' → vitrin (giriş sayfası): arabanın etrafında yavaşça döner
 //   'garage' → garaj: seçili parçaya yaklaşır (jant → tekerlek), fareyle / parmakla çevrilir
+//   'betting' → bahis ekranı: yan yana dizili arabalara sabit bakış (konumu betting.js verir)
 // Geçiş ani değil: iki modun hedef noktası her karede hesaplanır, blend (0 → 1) yumuşakça değişir
 // ve kamera bu ikisinin arasına konur.
 
@@ -44,6 +45,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   // Kameranın arabaya göre şu anki yörüngesi (arabanın ekseninde). Geçişte KONUM değil bu değerler kayar:
   // kamera arabanın etrafında dönerek yeni odağa gider, düz çizgide gövdenin içinden geçmez
   const orbit = { yaw: 0, radius: 11, height: 2.4, target: new THREE.Vector3(0, 1.4, 0) }
+  const bettingView = { position: new THREE.Vector3(), target: new THREE.Vector3(), fov: 50, snap: true }
   const impulse = { time: 0, duration: 1, strength: 0 } // dışarıdan gelen kısa sarsıntı (ör. yakın geçen meteor)
   const goalTarget = new THREE.Vector3()
   const orbitWorld = new THREE.Vector3()
@@ -101,8 +103,25 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
       orbit.radius = Math.hypot(orbitWorld.x, orbitWorld.z)
       orbit.height = orbitWorld.y - orbit.target.y
     }
+    if (next === 'betting' && mode !== 'betting') bettingView.snap = true // vitrine kesmeyle geç (lobiden uçarak değil)
     mode = next
     if (next === 'fall') fallSide = side
+  }
+
+  // Bahis ekranı: nereden nereye bakılsın (her kare; ekran oranı değişince betting.js yeniden hesaplar)
+  function setBettingView(position, target, fov) {
+    bettingView.position.copy(position)
+    bettingView.target.copy(target)
+    bettingView.fov = fov
+  }
+
+  function updateBetting(dt) {
+    const k = bettingView.snap ? 1 : 1 - Math.exp(-3 * dt)
+    bettingView.snap = false
+    camera.position.lerp(bettingView.position, k)
+    camera.lookAt(bettingView.target)
+    camera.fov += (bettingView.fov - camera.fov) * k
+    camera.updateProjectionMatrix()
   }
 
   // Yarış başlarken (geri sayım): mod ne olursa olsun takip, kamera doğrudan arabanın arkasında
@@ -205,6 +224,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
   function update(dt) {
     if (mode === 'showcase') updateShowcase(dt)
     else if (mode === 'garage') updateGarage(dt)
+    else if (mode === 'betting') updateBetting(dt)
     else updateFollow(dt)
     applyShake(dt)
   }
@@ -280,6 +300,7 @@ export function createCameraModes({ camera, domElement, car, boost, isOrbitEnabl
     update,
     setMode,
     resetForRace,
+    setBettingView,
     focusSlot,
     shake,
     get mode() {
